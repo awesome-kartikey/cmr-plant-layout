@@ -28,7 +28,7 @@ export function LayoutShell({ children, showHeader = true }: LayoutShellProps) {
     <div className="min-h-screen bg-gray-50">
       {showHeader && (
         <header className="bg-indigo-700 text-white shadow-md">
-          <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
+          <div className="mx-auto flex max-w-[1440px] items-center justify-between px-4 py-2.5">
             <div className="flex items-center gap-3">
               <img src="/cmr-logo.png" alt="CMR" className="h-8 w-auto" />
               <span className="text-lg font-bold">{t("appName")}</span>
@@ -57,7 +57,7 @@ export function LayoutShell({ children, showHeader = true }: LayoutShellProps) {
           </div>
         </header>
       )}
-      <main className="mx-auto max-w-5xl px-4 py-6">{children}</main>
+      <main className="mx-auto max-w-[1440px] px-2 md:px-4 pt-3 pb-6">{children}</main>
     </div>
   )
 }

@@ -67,7 +67,7 @@ export default function TrainingScreen() {
   const handlePathComplete = (finalPath: Point[]) => {
     const duration = Date.now() - drawStartTime
     
-    // 1. Grade Exit Selection (Max 50 pts)
+    // 1. Grade Exit Selection (Max 20 pts)
     const hazardPt = N[hazardNode]
     const exitDistances = ["G1", "G2", "G3"].reduce((acc, ex) => {
       if (N[ex]) {
@@ -82,9 +82,9 @@ export default function TrainingScreen() {
 
     // 15% visual tolerance
     const isNearest = selectedDist <= minD * 1.15 || Math.abs(selectedDist - minD) < 50
-    const exitScore = isNearest ? 50 : 30
+    const exitScore = isNearest ? 20 : 5
 
-    // 2. Grade Path Traced (Max 50 pts)
+    // 2. Grade Path Traced (Max 40 pts)
     const { dist: shortestPathDist } = dijkstra(N, DEFAULT_GRAPH.adj, selectedExit, "ASSEMBLY")
     
     let userPathDist = 0
@@ -93,40 +93,52 @@ export default function TrainingScreen() {
     }
 
     const deviation = Math.max(0, userPathDist - shortestPathDist)
-    let pathScoreVal = 10
+    let pathScoreVal = 5
     let accuracy: "excellent" | "good" | "average" | "poor" = "poor"
 
     if (deviation === 0 || deviation <= shortestPathDist * 0.05) {
-      pathScoreVal = 50
+      pathScoreVal = 40
       accuracy = "excellent"
     } else if (deviation <= shortestPathDist * 0.2) {
-      pathScoreVal = 40
+      pathScoreVal = 30
       accuracy = "good"
     } else if (deviation <= shortestPathDist * 0.45) {
-      pathScoreVal = 25
+      pathScoreVal = 15
       accuracy = "average"
     } else {
-      pathScoreVal = 10
+      pathScoreVal = 5
       accuracy = "poor"
     }
 
-    const totalAttemptScore = exitScore + pathScoreVal
+    // 3. Grade Speed (Max 40 pts)
+    let speedScore = 0
+    if (duration <= 10000) {
+      speedScore = 40
+    } else if (duration <= 15000) {
+      speedScore = 25
+    } else if (duration <= 20000) {
+      speedScore = 10
+    } else {
+      speedScore = 0
+    }
+
+    const totalAttemptScore = exitScore + pathScoreVal + speedScore
     setResultScore(totalAttemptScore)
 
     // Set user feedback message
     const sec = (duration / 1000).toFixed(1)
     if (totalAttemptScore >= 90) {
       setResultTitle("🏆 Outstanding Escape!")
-      setResultMsg(`Perfect exit selection and ideal corridor tracing. Cleared in ${sec}s with ${Math.round(deviation)}px deviation.`)
-    } else if (totalAttemptScore >= 75) {
-      setResultTitle("✅ Successful Evacuation")
-      setResultMsg(`Safe exit. Traced path with minor corridor deviations. Cleared in ${sec}s.`)
-    } else if (totalAttemptScore >= 50) {
-      setResultTitle("⚠️ Suboptimal Evacuation")
-      setResultMsg(`Evacuated safely, but a closer exit was available or path tracing deviated significantly.`)
+      setResultMsg(`Perfect execution! Cleared in ${sec}s.`)
+    } else if (totalAttemptScore >= 70) {
+      setResultTitle("✅ Good Attempt")
+      setResultMsg(`Good pathing, but could be faster. Cleared in ${sec}s.`)
+    } else if (totalAttemptScore >= 40) {
+      setResultTitle("⚠️ Needs Improvement")
+      setResultMsg(`Average route. Try drawing the path faster next time. Cleared in ${sec}s.`)
     } else {
-      setResultTitle("❌ Dangerous Evacuation")
-      setResultMsg(`Evacuation route was highly inefficient. Training review is advised.`)
+      setResultTitle("❌ Poor Route")
+      setResultMsg(`Too slow or took the long way around. Cleared in ${sec}s.`)
     }
 
     setPhase("evaluated")
@@ -176,10 +188,10 @@ export default function TrainingScreen() {
 
   return (
     <LayoutShell showHeader={phase !== "edit"}>
-      <div className="space-y-4 pb-12 select-none">
+      <div className="space-y-2 pb-12 select-none">
         
         {/* Modern Phase HUD / Status Banner */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white border border-slate-100 rounded-2xl p-5 shadow-sm animate-in fade-in duration-300">
+        <div className="flex flex-row flex-wrap items-center justify-between gap-3 bg-white border border-slate-100 rounded-2xl py-2 px-4 shadow-sm animate-in fade-in duration-300">
           <div className="flex flex-wrap items-center gap-4">
             
             {/* Step-by-Step Sequence Indicators */}
@@ -234,39 +246,41 @@ export default function TrainingScreen() {
             </div>
           </div>
 
-          <div className="flex items-center justify-between md:justify-end gap-4 shrink-0">
+          <div className="flex items-center justify-between xl:justify-end gap-2.5 shrink-0 flex-wrap">
             {phase === "path-draw" && (
-              <div className="flex items-center gap-2 bg-slate-900 text-slate-200 px-3.5 py-1.5 rounded-xl font-mono text-xs font-bold shadow-inner">
-                <Timer className="h-4 w-4 text-sky-400 animate-spin-slow" />
-                <span>{(elapsedTime / 1000).toFixed(1)}s</span>
-              </div>
+              <>
+                <div className="flex items-center gap-2 bg-slate-900 text-slate-200 px-3 py-1.5 rounded-xl font-mono text-xs font-bold shadow-inner">
+                  <Timer className="h-4 w-4 text-sky-400 animate-spin-slow" />
+                  <span>{(elapsedTime / 1000).toFixed(1)}s</span>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleUndo}
+                  disabled={drawnPath.length <= 1}
+                  className="h-8 px-2.5 border-slate-200 hover:bg-slate-50 hover:text-slate-700 font-semibold rounded-xl text-xs flex items-center gap-1.5 cursor-pointer shadow-sm bg-white"
+                >
+                  <Undo2 className="h-3.5 w-3.5" /> <span className="hidden md:inline">{t("undoLast")}</span>
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleClear}
+                  className="h-8 px-2.5 border-slate-200 hover:bg-slate-50 hover:text-slate-700 font-semibold rounded-xl text-xs flex items-center gap-1.5 cursor-pointer shadow-sm bg-white"
+                >
+                  <RotateCcw className="h-3.5 w-3.5" /> <span className="hidden md:inline">{t("clearTracing")}</span>
+                </Button>
+              </>
             )}
             
             {/* Visual Attempts Segmented Gauge */}
-            <div className="flex items-center gap-3 bg-slate-50 border border-slate-100 rounded-xl px-3 py-1.5">
-              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">{t("attempts")}</span>
-              <div className="flex gap-1.5">
-                {[0, 1, 2].map((idx) => {
-                  const att = testData.attempts[idx]
-                  return (
-                    <div 
-                      key={idx} 
-                      className={`w-3.5 h-3.5 rounded-full border transition-all ${
-                        att 
-                          ? att.points >= 90 
-                            ? "bg-emerald-500 border-emerald-600 shadow-xs shadow-emerald-500/25" 
-                            : att.points >= 60 
-                              ? "bg-amber-500 border-amber-600 shadow-xs" 
-                              : "bg-red-500 border-red-600 shadow-xs"
-                          : idx === testData.attempts.length
-                            ? "bg-indigo-50 border-indigo-300 animate-pulse" 
-                            : "bg-slate-150 border-slate-200"
-                      }`}
-                      title={att ? `Attempt ${idx+1}: ${att.points} pts` : `Attempt ${idx+1}`}
-                    />
-                  )
-                })}
-              </div>
+            <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-100 rounded-xl px-2.5 py-1.5">
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{t("attempts")}</span>
+              <span className="text-sm font-black text-slate-700 font-mono leading-none flex items-baseline tracking-tighter">
+                {Math.min(testData.attempts.length + 1, testData.totalAttempts)}
+                <span className="text-xs text-slate-400 font-bold mx-0.5">/</span>
+                <span className="text-[11px] text-slate-400">{testData.totalAttempts}</span>
+              </span>
             </div>
 
             {import.meta.env.DEV && (
@@ -279,29 +293,6 @@ export default function TrainingScreen() {
             )}
           </div>
         </div>
-
-        {/* Action Controls for Drawing */}
-        {phase === "path-draw" && (
-          <div className="flex justify-end gap-3 animate-in slide-in-from-top-3 duration-300">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleUndo}
-              disabled={drawnPath.length <= 1}
-              className="border-slate-200 hover:bg-slate-50 hover:text-slate-700 font-semibold rounded-xl text-xs flex items-center gap-1.5 cursor-pointer shadow-sm bg-white"
-            >
-              <Undo2 className="h-3.5 w-3.5" /> {t("undoLast")}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleClear}
-              className="border-slate-200 hover:bg-slate-50 hover:text-slate-700 font-semibold rounded-xl text-xs flex items-center gap-1.5 cursor-pointer shadow-sm bg-white"
-            >
-              <RotateCcw className="h-3.5 w-3.5" /> {t("clearTracing")}
-            </Button>
-          </div>
-        )}
 
         {/* Map Container */}
         <div className="relative">

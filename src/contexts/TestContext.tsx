@@ -21,7 +21,7 @@ const initialEmployeeData: EmployeeData = {
 
 const initialTestData: TestData = {
   score: 0,
-  totalAttempts: 3,
+  totalAttempts: 10,
   attempts: [],
 }
 

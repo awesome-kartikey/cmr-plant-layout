@@ -51,7 +51,7 @@ export const INITIAL_COLLISION_ZONES = [
   { id: 'block-1783419249230', x: -28, y: -1, width: 62, height: 101 },
   { id: 'block-1783419250358', x: 358, y: -3, width: 239, height: 20 },
   { id: 'block-1783419251274', x: 73, y: -3, width: 152, height: 20 },
-  { id: 'block-1783419252999', x: -37, y: 449, width: 100, height: 100 },
+  { id: 'block-1783419252999', x: 14, y: 467, width: 24, height: 83 },
 ]
 
 export const EXITS = ["G1", "G2", "G3", "ASSEMBLY"]

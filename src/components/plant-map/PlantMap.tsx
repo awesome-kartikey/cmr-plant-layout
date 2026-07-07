@@ -431,7 +431,7 @@ export function PlantMap({
 
   return (
     <div 
-      className="relative max-h-[68vh] max-w-[1000px] aspect-[1000/600] w-auto mx-auto rounded-xl overflow-hidden shadow-2xl bg-[#0a0a16] border border-gray-800 select-none"
+      className="relative max-h-[80vh] max-w-[1400px] aspect-[1000/600] w-auto mx-auto rounded-xl overflow-hidden shadow-2xl bg-[#0a0a16] border border-gray-800 select-none"
       onContextMenu={(e) => {
         if (phase === "edit" && editTool === "trace") {
           e.preventDefault()
