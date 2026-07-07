@@ -1,5 +1,6 @@
 import type { ReactNode } from "react"
 import { useTranslation } from "react-i18next"
+import { useNavigate } from "react-router-dom"
 import { useAuth } from "../../contexts/AuthContext"
 import { Button } from "../ui/button"
 
@@ -11,6 +12,12 @@ interface LayoutShellProps {
 export function LayoutShell({ children, showHeader = true }: LayoutShellProps) {
   const { t, i18n } = useTranslation()
   const { user, logout } = useAuth()
+  const navigate = useNavigate()
+
+  const handleLogout = async () => {
+    await logout()
+    navigate("/login")
+  }
 
   const toggleLanguage = () => {
     const newLang = i18n.language === "en" ? "hi" : "en"
@@ -41,7 +48,7 @@ export function LayoutShell({ children, showHeader = true }: LayoutShellProps) {
                   variant="ghost"
                   size="sm"
                   className="text-white hover:bg-indigo-600"
-                  onClick={logout}
+                  onClick={handleLogout}
                 >
                   {t("logout")}
                 </Button>

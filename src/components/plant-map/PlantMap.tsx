@@ -1,18 +1,32 @@
 import { useState, useRef, useCallback, useEffect } from "react"
-import { N as initialN, EDGES as initialEdges, buildGraph, projOnSeg, ptDist, EXITS } from "../../lib/graph"
+import { N as initialN, EDGES as initialEdges, buildGraph, projOnSeg, ptDist, EXITS, DEFAULT_GRAPH } from "../../lib/graph"
 import type { Point, Segment, GraphNodes, EdgeDef, NodeDef } from "../../lib/graph"
 import { FireEffect } from "./FireEffect"
 
 interface PlantMapProps {
-  phase: "hazard" | "playing" | "evaluated" | "edit"
+  phase: "hazard-confirm" | "exit-select" | "path-draw" | "evaluated" | "edit"
   hazardNode: string | null
+  selectedExit?: string
+  drawnPath?: string[]
+  setDrawnPath?: (path: string[]) => void
+  onHazardConfirmed?: () => void
   onExitSelected?: (exitNode: string) => void
+  onPathComplete?: (path: string[]) => void
 }
 
 type EditTool = "drag" | "add" | "connect" | "delete" | "trace"
 type EditLayer = "path" | "hazard"
 
-export function PlantMap({ phase, hazardNode, onExitSelected }: PlantMapProps) {
+export function PlantMap({ 
+  phase, 
+  hazardNode, 
+  selectedExit, 
+  drawnPath = [], 
+  setDrawnPath, 
+  onHazardConfirmed, 
+  onExitSelected, 
+  onPathComplete 
+}: PlantMapProps) {
   const svgRef = useRef<SVGSVGElement>(null)
   
   // Graph State
@@ -32,13 +46,16 @@ export function PlantMap({ phase, hazardNode, onExitSelected }: PlantMapProps) {
   const [nodeIdInput, setNodeIdInput] = useState("")
   const [lastTraceNode, setLastTraceNode] = useState<string | null>(null)
   
+  // Gameplay state
+  const [isDrawing, setIsDrawing] = useState(false)
+
   // Toolbar Drag State
   const [toolbarPos, setToolbarPos] = useState({ x: 40, y: 40 })
   const toolbarDragRef = useRef<{ isDragging: boolean; startX: number; startY: number }>({ isDragging: false, startX: 0, startY: 0 })
 
   // Reset states on phase change
   useEffect(() => {
-    if (phase !== "playing" && phase !== "evaluated") {
+    if (phase !== "path-draw" && phase !== "edit") {
       setTraceCursor(null)
     }
     if (phase !== "edit") {
@@ -98,7 +115,7 @@ export function PlantMap({ phase, hazardNode, onExitSelected }: PlantMapProps) {
   }
 
   const getNodeAtPoint = (pt: Point, threshold = 20) => {
-    let best = null, bd = threshold
+    let best: string | null = null, bd = threshold
     Object.keys(nodes).forEach(k => {
       if (phase === "edit" && !isVisibleInLayer(k)) return
       const d = ptDist(pt, nodes[k])
@@ -107,8 +124,60 @@ export function PlantMap({ phase, hazardNode, onExitSelected }: PlantMapProps) {
     return best
   }
 
+  const handlePathNodeClick = (nodeId: string) => {
+    if (phase !== "path-draw") return
+    
+    const lastIdx = drawnPath.length - 1
+    if (drawnPath[lastIdx] === nodeId) {
+      return
+    }
+    if (lastIdx > 0 && drawnPath[lastIdx - 1] === nodeId) {
+      // Undo last step if they click previous node
+      const newPath = drawnPath.slice(0, -1)
+      setDrawnPath?.(newPath)
+      return
+    }
+    
+    const lastNode = drawnPath[lastIdx]
+    const isAdj = DEFAULT_GRAPH.adj[lastNode]?.includes(nodeId)
+    if (isAdj) {
+      const newPath = [...drawnPath, nodeId]
+      setDrawnPath?.(newPath)
+      if (nodeId === "ASSEMBLY" && onPathComplete) {
+        onPathComplete(newPath)
+      }
+    }
+  }
+
   const onPointerDown = (e: React.PointerEvent) => {
     const pt = screenToSVG(e)
+    
+    if (phase === "hazard-confirm") {
+      if (hazardNode && nodes[hazardNode]) {
+        const d = ptDist(pt, nodes[hazardNode])
+        if (d < 45 && onHazardConfirmed) {
+          onHazardConfirmed()
+        }
+      }
+      return
+    }
+
+    if (phase === "exit-select") {
+      const targetNode = getNodeAtPoint(pt, 40)
+      if (targetNode && ["G1", "G2", "G3"].includes(targetNode) && onExitSelected) {
+        onExitSelected(targetNode)
+      }
+      return
+    }
+
+    if (phase === "path-draw") {
+      setIsDrawing(true)
+      const targetNode = getNodeAtPoint(pt, 25)
+      if (targetNode) {
+        handlePathNodeClick(targetNode)
+      }
+      return
+    }
     
     if (phase === "edit") {
       const targetNode = getNodeAtPoint(pt)
@@ -123,7 +192,7 @@ export function PlantMap({ phase, hazardNode, onExitSelected }: PlantMapProps) {
       }
 
       if (editTool === "trace") {
-        let activeNode = targetNode
+        let activeNode: string | null = targetNode
         if (!activeNode) {
           const newId = `P_${Date.now().toString().slice(-4)}`
           setNodes(prev => ({ 
@@ -182,21 +251,33 @@ export function PlantMap({ phase, hazardNode, onExitSelected }: PlantMapProps) {
       }
       return
     }
-
-    if (phase !== "playing") return
-
-    // Gameplay Phase: Just wait for user to click an exit
-    e.preventDefault()
-    
-    const targetNode = getNodeAtPoint(pt, 40) // nice large tap target for exits
-    if (targetNode && EXITS.includes(targetNode) && onExitSelected) {
-      onExitSelected(targetNode)
-    }
   }
 
   const onPointerMove = (e: React.PointerEvent) => {
     const pt = screenToSVG(e)
     
+    if (phase === "path-draw" && isDrawing) {
+      const lastNode = drawnPath?.[drawnPath.length - 1]
+      if (lastNode) {
+        const adjNodes = DEFAULT_GRAPH.adj[lastNode] || []
+        adjNodes.forEach(nodeId => {
+          const n = nodes[nodeId]
+          if (n && ptDist(pt, n) < 22) {
+            // Dragged close to adjacent node - append it!
+            if (drawnPath && !drawnPath.includes(nodeId)) {
+              const newPath = [...drawnPath, nodeId]
+              setDrawnPath?.(newPath)
+              if (nodeId === "ASSEMBLY" && onPathComplete) {
+                setIsDrawing(false)
+                onPathComplete(newPath)
+              }
+            }
+          }
+        })
+      }
+      return
+    }
+
     if (phase === "edit") {
       if (editTool === "trace" && lastTraceNode) {
         setTraceCursor(pt)
@@ -213,6 +294,7 @@ export function PlantMap({ phase, hazardNode, onExitSelected }: PlantMapProps) {
   }
 
   const onPointerUp = (e: React.PointerEvent) => {
+    setIsDrawing(false)
     if (phase === "edit") {
       if (dragNode) {
         if (editTool === "drag") {
@@ -311,8 +393,6 @@ export function PlantMap({ phase, hazardNode, onExitSelected }: PlantMapProps) {
     ;(e.target as HTMLElement).releasePointerCapture(e.pointerId)
   }
 
-  // Determine paths to render
-
   return (
     <div 
       className="relative max-h-[68vh] max-w-[1000px] aspect-[1000/600] w-auto mx-auto rounded-xl overflow-hidden shadow-2xl bg-[#0a0a16] border border-gray-800 select-none"
@@ -336,6 +416,17 @@ export function PlantMap({ phase, hazardNode, onExitSelected }: PlantMapProps) {
         onPointerUp={onPointerUp}
         onPointerLeave={onPointerUp}
       >
+        {/* Glow Filters */}
+        <defs>
+          <filter id="neon-glow" x="-20%" y="-20%" width="140%" height="140%">
+            <feGaussianBlur stdDeviation="5" result="blur" />
+            <feMerge>
+              <feMergeNode in="blur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+        </defs>
+
         {/* Trace cursor line (Edit Mode) */}
         {phase === "edit" && editTool === "trace" && lastTraceNode && traceCursor && (
           <line 
@@ -350,7 +441,7 @@ export function PlantMap({ phase, hazardNode, onExitSelected }: PlantMapProps) {
           />
         )}
 
-        {/* Render Graph Edges */}
+        {/* Render Graph Edges (Edit Mode Only) */}
         {phase === "edit" && edges.map(([a, b], i) => {
           if (!nodes[a] || !nodes[b]) return null
           const isHazardEdge = nodes[a].room || nodes[b].room
@@ -362,7 +453,32 @@ export function PlantMap({ phase, hazardNode, onExitSelected }: PlantMapProps) {
           return <line key={i} x1={nodes[a].x} y1={nodes[a].y} x2={nodes[b].x} y2={nodes[b].y} stroke={`rgba(255,255,255,${edgeOpacity})`} strokeWidth="3" />
         })}
 
-        {/* Nodes */}
+        {/* Render Traced Neon Evacuation Path (Gameplay mode) */}
+        {phase === "path-draw" && drawnPath && drawnPath.length > 0 && (
+          <g>
+            <path
+              d={drawnPath.map((id, idx) => `${idx === 0 ? "M" : "L"} ${nodes[id]?.x} ${nodes[id]?.y}`).join(" ")}
+              fill="none"
+              stroke="rgba(16, 185, 129, 0.4)"
+              strokeWidth="9"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              filter="url(#neon-glow)"
+              className="pointer-events-none"
+            />
+            <path
+              d={drawnPath.map((id, idx) => `${idx === 0 ? "M" : "L"} ${nodes[id]?.x} ${nodes[id]?.y}`).join(" ")}
+              fill="none"
+              stroke="#10b981"
+              strokeWidth="3.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="pointer-events-none animate-[pulse_1.5s_infinite]"
+            />
+          </g>
+        )}
+
+        {/* Render Nodes */}
         {Object.keys(nodes).map(k => {
           const n = nodes[k]
           if (phase === "edit") {
@@ -397,31 +513,58 @@ export function PlantMap({ phase, hazardNode, onExitSelected }: PlantMapProps) {
             )
           }
 
-          // Normal Mode Rendering
+          // Gameplay Rendering
           if (n.target) {
+            const isTargetDest = phase === "path-draw"
             return (
-              <g key={k} className={phase === "playing" ? "cursor-pointer" : ""}>
-                <circle cx={n.x} cy={n.y} r="40" fill="rgba(251,191,36,0.2)" />
-                <circle cx={n.x} cy={n.y} r="26" stroke="#fbbf24" strokeWidth="2.5" fill="none" />
-                <text x={n.x} y={n.y + 8} textAnchor="middle" fontSize="26" className="pointer-events-none">⭐</text>
+              <g key={k} className="cursor-pointer">
+                {isTargetDest && (
+                  <circle 
+                    cx={n.x} 
+                    cy={n.y} 
+                    r="45" 
+                    fill="none" 
+                    stroke="#fbbf24" 
+                    strokeWidth="2" 
+                    className="animate-ping" 
+                    style={{ transformOrigin: `${n.x}px ${n.y}px` }}
+                  />
+                )}
+                <circle cx={n.x} cy={n.y} r="32" fill="rgba(251,191,36,0.15)" />
+                <circle cx={n.x} cy={n.y} r="20" stroke="#fbbf24" strokeWidth="2" fill="none" />
+                <text x={n.x} y={n.y + 6} textAnchor="middle" fontSize="20" className="pointer-events-none">⭐</text>
               </g>
             )
           }
+
           if (n.gate) {
+            const isBlinkingExit = phase === "exit-select" && ["G1", "G2", "G3"].includes(k)
             return (
-              <g key={k} className={phase === "playing" ? "cursor-pointer" : ""}>
-                <circle cx={n.x} cy={n.y} r="28" fill="rgba(16,185,129,0.2)" />
-                <circle cx={n.x} cy={n.y} r="18" stroke="#10b981" strokeWidth="2" fill="none" />
-                <text x={n.x} y={n.y + 5} textAnchor="middle" fontSize="18" className="pointer-events-none">🚪</text>
+              <g key={k} className="cursor-pointer">
+                {isBlinkingExit && (
+                  <circle 
+                    cx={n.x} 
+                    cy={n.y} 
+                    r="36" 
+                    fill="none" 
+                    stroke="#10b981" 
+                    strokeWidth="2" 
+                    className="animate-ping" 
+                    style={{ transformOrigin: `${n.x}px ${n.y}px` }}
+                  />
+                )}
+                <circle cx={n.x} cy={n.y} r="24" fill={isBlinkingExit ? "rgba(16,185,129,0.3)" : "rgba(16,185,129,0.15)"} />
+                <circle cx={n.x} cy={n.y} r="15" stroke="#10b981" strokeWidth="2.5" fill="none" />
+                <text x={n.x} y={n.y + 5} textAnchor="middle" fontSize="15" className="pointer-events-none">🚪</text>
               </g>
             )
           }
           return null
         })}
 
-        {/* SVG-based Fire indicator (keeps fire perfectly aligned at all scales) */}
-        {hazardNode && nodes[hazardNode] && (phase === "hazard" || phase === "playing" || phase === "evaluated") && (
-          <g className="pointer-events-none">
+        {/* SVG-based Fire indicator */}
+        {hazardNode && nodes[hazardNode] && (phase === "hazard-confirm" || phase === "exit-select" || phase === "path-draw" || phase === "evaluated") && (
+          <g className={phase === "hazard-confirm" ? "cursor-pointer" : "pointer-events-none"}>
             {/* Outer red warning pulse */}
             <circle 
               cx={nodes[hazardNode].x} 
@@ -430,7 +573,8 @@ export function PlantMap({ phase, hazardNode, onExitSelected }: PlantMapProps) {
               fill="rgba(239, 68, 68, 0.25)" 
               stroke="#ef4444"
               strokeWidth="2"
-              className="animate-pulse"
+              className={phase === "hazard-confirm" ? "animate-ping" : "animate-pulse"}
+              style={{ transformOrigin: `${nodes[hazardNode].x}px ${nodes[hazardNode].y}px` }}
             />
             <circle 
               cx={nodes[hazardNode].x} 
@@ -438,17 +582,63 @@ export function PlantMap({ phase, hazardNode, onExitSelected }: PlantMapProps) {
               r="22" 
               fill="rgba(239, 68, 68, 0.4)" 
             />
-            {/* Canvas fire effect inside SVG using foreignObject (auto-scales with map!) */}
+            {/* Canvas fire effect inside SVG using foreignObject (larger size to prevent particles going outside canvas bounds) */}
             <foreignObject 
-              x={nodes[hazardNode].x - 20} 
-              y={nodes[hazardNode].y - 30} 
-              width="40" 
-              height="40"
+              x={nodes[hazardNode].x - 40} 
+              y={nodes[hazardNode].y - 65} 
+              width="80" 
+              height="80"
             >
-              <FireEffect size={40} />
+              <FireEffect size={80} />
             </foreignObject>
           </g>
         )}
+
+        {/* Render pulsing adjacent nodes targets to trace path */}
+        {phase === "path-draw" && (() => {
+          const lastNode = drawnPath?.[drawnPath.length - 1]
+          const adjNodes = lastNode ? DEFAULT_GRAPH.adj[lastNode] || [] : []
+          return adjNodes.map(nodeId => {
+            const n = nodes[nodeId]
+            if (!n) return null
+            return (
+              <g 
+                key={`adj-${nodeId}`} 
+                className="cursor-pointer"
+                onPointerDown={(e) => {
+                  e.stopPropagation()
+                  handlePathNodeClick(nodeId)
+                }}
+              >
+                <circle 
+                  cx={n.x} 
+                  cy={n.y} 
+                  r="20" 
+                  fill="rgba(56, 189, 248, 0.2)" 
+                  className="animate-pulse" 
+                />
+                <circle 
+                  cx={n.x} 
+                  cy={n.y} 
+                  r="14" 
+                  fill="rgba(56, 189, 248, 0.15)" 
+                  stroke="#38bdf8"
+                  strokeWidth="2"
+                  className="animate-ping" 
+                  style={{ transformOrigin: `${n.x}px ${n.y}px` }}
+                />
+                <circle 
+                  cx={n.x} 
+                  cy={n.y} 
+                  r="6" 
+                  fill="#38bdf8" 
+                  stroke="white"
+                  strokeWidth="2.5"
+                />
+              </g>
+            )
+          })
+        })()}
 
       </svg>
 

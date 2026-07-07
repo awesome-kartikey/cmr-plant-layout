@@ -18,13 +18,13 @@ export function generateCertificate(employeeData: EmployeeData, testData: TestDa
   doc.setLineWidth(2)
   doc.rect(10, 10, pageW - 20, 277)
 
-  doc.setFontSize(36)
+  doc.setFontSize(28)
   doc.setTextColor(30, 58, 138)
-  doc.text("ENDURANCE DOJO", pageW / 2, 35, { align: "center" })
+  doc.text("CMR MANUFACTURING SERVICES", pageW / 2, 35, { align: "center" })
 
   doc.setFontSize(12)
   doc.setTextColor(100)
-  doc.text("Excellence in Defect Detection Training", pageW / 2, 44, { align: "center" })
+  doc.text("Excellence in Emergency Evacuation & Plant Layout Training", pageW / 2, 44, { align: "center" })
 
   doc.setFontSize(22)
   doc.setTextColor(30, 58, 138)
@@ -34,7 +34,7 @@ export function generateCertificate(employeeData: EmployeeData, testData: TestDa
   doc.setLineWidth(0.5)
   doc.line(40, 70, pageW - 40, 70)
 
-  const maxScore = testData.totalAttempts * 20
+  const maxScore = testData.totalAttempts * 100
   const percentage = maxScore > 0 ? Math.round((testData.score / maxScore) * 100) : 0
   const band = getBandLabel(percentage)
 
@@ -90,7 +90,7 @@ export function generateCertificate(employeeData: EmployeeData, testData: TestDa
   doc.setFontSize(10)
   doc.setTextColor(150)
   doc.text("Assessment completed at Tetrahedron Manufacturing Services Pvt. Ltd.", pageW / 2, 230, { align: "center" })
-  doc.text(`Certificate ID: ED-${formattedDate}-${employeeData.employeeCode}`, pageW / 2, 238, { align: "center" })
+  doc.text(`Certificate ID: CMR-PLT-${formattedDate}-${employeeData.employeeCode}`, pageW / 2, 238, { align: "center" })
 
   doc.setDrawColor(100)
   doc.setLineWidth(0.5)
@@ -103,7 +103,7 @@ export function generateCertificate(employeeData: EmployeeData, testData: TestDa
 
   doc.setFontSize(8)
   doc.setTextColor(180)
-  doc.text("ENDURANCE", pageW / 2, 270, { align: "center", angle: 0 })
+  doc.text("TETRAHEDRON", pageW / 2, 270, { align: "center", angle: 0 })
 
   return doc
 }
