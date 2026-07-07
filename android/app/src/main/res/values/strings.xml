@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">CMR Plant Layout</string>
+    <string name="title_activity_main">CMR Plant Layout</string>
+    <string name="package_name">com.cmr.plantlayout</string>
+    <string name="custom_url_scheme">com.cmr.plantlayout</string>
+</resources>

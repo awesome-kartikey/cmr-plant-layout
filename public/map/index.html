@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Emergency Evacuation Trainer</title>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+    html,body{width:100%;height:100%;overflow:hidden;background:#0a0a16;font-family:system-ui,-apple-system,sans-serif}
+    #wrapper{display:flex;align-items:center;justify-content:center;width:100%;height:100%;position:fixed;top:0;left:0}
+    #game{position:relative;width:1000px;height:600px;background:#1a1a2e;border-radius:10px;overflow:hidden;box-shadow:0 0 80px rgba(0,0,0,.8);transform-origin:center center;touch-action:none;-webkit-user-select:none;user-select:none}
+    canvas{position:absolute;top:0;left:0;width:100%;height:100%}
+    .ov{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:10;transition:opacity .3s,visibility .3s}
+    .ov.h{opacity:0;visibility:hidden;pointer-events:none}
+    .ov-bg{position:absolute;inset:0;background:rgba(0,0,0,.72);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+    .ov-bd{position:relative;z-index:1;text-align:center;padding:28px 24px;max-width:460px;width:92%}
+    #hud{position:absolute;top:0;left:0;right:0;z-index:5;padding:10px 16px;display:flex;justify-content:space-between;align-items:center;background:linear-gradient(180deg,rgba(0,0,0,.8),transparent);pointer-events:none;transition:opacity .3s}
+    #hud.h{opacity:0}
+    .btn{display:inline-flex;align-items:center;justify-content:center;font-weight:700;border:none;cursor:pointer;transition:transform .1s,background .15s;touch-action:manipulation;pointer-events:auto}
+    .btn:active{transform:scale(.93)}
+    .btn-g{background:#10b981;color:#fff;padding:10px 28px;border-radius:12px;font-size:16px;box-shadow:0 4px 24px rgba(16,185,129,.4)}
+    .btn-g:hover{background:#34d399}
+    .btn-a{background:#f59e0b;color:#fff;padding:8px 22px;border-radius:10px;font-size:14px;box-shadow:0 4px 18px rgba(245,158,11,.3)}
+    .btn-a:hover{background:#fbbf24}
+    .st{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-bottom:18px;font-size:12px;color:rgba(255,255,255,.45)}
+    .st b{color:rgba(255,255,255,.8)}
+    @keyframes pop{from{opacity:0;transform:scale(.85)}to{opacity:1;transform:scale(1)}}
+    .pop{animation:pop .3s ease forwards}
+  </style>
+</head>
+<body>
+<div id="wrapper">
+  <div id="game">
+    <canvas id="c"></canvas>
+    <div id="hud" class="h">
+      <div><div style="font-size:10px;color:rgba(255,255,255,.5);text-transform:uppercase;letter-spacing:1px">Room</div><div id="hud-room" style="font-size:14px;font-weight:700;color:#fff"></div></div>
+      <div style="text-align:center"><div style="font-size:10px;color:rgba(255,255,255,.5);text-transform:uppercase;letter-spacing:1px">Score</div><div id="hud-score" style="font-size:14px;font-weight:700;color:#fbbf24">0</div></div>
+      <div style="text-align:right">
+        <button id="btnEdit" class="btn" style="background:rgba(255,255,255,.1);color:#fff;padding:6px 12px;border-radius:6px;font-size:12px;margin-bottom:4px">Edit Mode</button>
+        <div><div style="font-size:10px;color:rgba(255,255,255,.5);text-transform:uppercase;letter-spacing:1px">Round</div><div id="hud-round" style="font-size:14px;font-weight:700;color:#fff">1</div></div>
+      </div>
+    </div>
+    <div id="welcome" class="ov">
+      <div class="ov-bg"></div>
+      <div class="ov-bd pop">
+        <div style="font-size:52px;margin-bottom:8px">🚨</div>
+        <h1 style="font-size:26px;font-weight:800;color:#fff;margin-bottom:8px;line-height:1.2">Emergency<br>Evacuation Trainer</h1>
+        <p style="font-size:13px;color:rgba(255,255,255,.45);margin-bottom:6px;line-height:1.5">A fire has broken out. <b style="color:rgba(255,255,255,.7)">Draw a path</b> or <b style="color:#fbbf24">tap the nearest safe exit</b> (Gates or Assembly Area).</p>
+        <p style="font-size:11px;color:rgba(255,255,255,.3);margin-bottom:22px">Shortest path = highest score</p>
+        <button id="btnStart" class="btn btn-g">Start Training</button>
+      </div>
+    </div>
+    <div id="result" class="ov h">
+      <div class="ov-bg"></div>
+      <div class="ov-bd">
+        <div id="rIcon" style="font-size:52px;margin-bottom:6px" class="pop"></div>
+        <h2 id="rTitle" style="font-size:22px;font-weight:800;color:#fff;margin-bottom:4px" class="pop"></h2>
+        <p id="rMsg" style="font-size:13px;color:rgba(255,255,255,.55);margin-bottom:6px" class="pop"></p>
+        <p id="rHint" style="font-size:11px;color:rgba(255,255,255,.35);margin-bottom:14px" class="pop"></p>
+        <div id="rStats" class="st"></div>
+        <div id="rBtns" style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap"></div>
+      </div>
+    </div>
+    <div id="edit-panel" class="ov h">
+      <div class="ov-bg"></div>
+      <div class="ov-bd pop" style="max-width:800px;width:95%">
+        <h2 style="color:#fff;margin-bottom:10px;font-size:20px">Map Configuration Export</h2>
+        <p style="font-size:12px;color:rgba(255,255,255,.5);margin-bottom:10px">Copy this object back into your index.html to save these positions permanently.</p>
+        <textarea id="edit-export" style="width:100%;height:300px;background:#0a0a16;color:#fff;border:1px solid #333;padding:10px;font-family:monospace;font-size:12px;margin-bottom:16px" readonly></textarea>
+        <button id="btnEditClose" class="btn btn-a">Close & Resume</button>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+(function(){
+'use strict';
+
+const CW=1000,CH=600;
+
+// ── GRAPH ──────────────────────────────────────────────────────
+const N={
+  HOT:{x:550,y:340,room:true},COLD:{x:150,y:220,room:true},DG:{x:830,y:180,room:true},
+  L0:{x:50,y:100},L1:{x:50,y:220},L2:{x:50,y:350},L3:{x:50,y:450},L4:{x:50,y:580},
+  M0:{x:310,y:100},M1:{x:310,y:220},M2:{x:310,y:350},M3:{x:310,y:450},
+  C0:{x:480,y:100},C1:{x:480,y:220},C2:{x:480,y:350},C3:{x:480,y:450},C4:{x:480,y:580},
+  R0:{x:740,y:100},R1:{x:740,y:220},R2:{x:740,y:350},R3:{x:740,y:450},
+  ASSEMBLY:{x:580,y:580,target:true},G1:{x:740,y:30,gate:true},G2:{x:530,y:585,gate:true},G3:{x:40,y:585,gate:true}
+};
+
+const EDGES=[
+  ['HOT','C2'],['HOT','M2'],['COLD','L1'],['COLD','M1'],['DG','R1'],['DG','R0'],
+  ['L0','L1'],['L1','L2'],['L2','L3'],['L3','L4'],
+  ['M0','M1'],['M1','M2'],['M2','M3'],
+  ['C0','C1'],['C1','C2'],['C2','C3'],['C3','C4'],
+  ['R0','R1'],['R1','R2'],['R2','R3'],
+  ['L0','M0'],['M0','C0'],['C0','R0'],
+  ['L1','M1'],['M1','C1'],['C1','R1'],
+  ['L2','M2'],['M2','C2'],['C2','R2'],
+  ['L3','M3'],['M3','C3'],['C3','R3'],
+  ['L4','G3'],['L4','C4'],['C4','ASSEMBLY'],['C4','G2'],
+  ['R3','C3'],['R3','ASSEMBLY'],['R0','G1']
+];
+
+const ROOMS=[{nodeId:'HOT',name:'Hot Refining Area'},{nodeId:'COLD',name:'Cold Refining Area'},{nodeId:'DG',name:'DG Area'}];
+
+// ── GRAPH MATH ─────────────────────────────────────────────────
+let adj={}, segs=[];
+
+function initGraph() {
+  adj={};
+  Object.keys(N).forEach(k=>{adj[k]=[];});
+  EDGES.forEach(([a,b])=>{adj[a].push(b);adj[b].push(a);});
+  segs=EDGES.map(([a,b])=>({aKey:a,bKey:b,ax:N[a].x,ay:N[a].y,bx:N[b].x,by:N[b].y}));
+}
+initGraph();
+
+function nd(a,b){const dx=N[a].x-N[b].x,dy=N[a].y-N[b].y;return Math.sqrt(dx*dx+dy*dy);}
+
+function dijkstra(start,end){
+  const dist={},prev={},vis={};
+  Object.keys(N).forEach(k=>{dist[k]=Infinity;});dist[start]=0;
+  while(true){
+    let u=null,mn=Infinity;
+    Object.keys(N).forEach(k=>{if(!vis[k]&&dist[k]<mn){mn=dist[k];u=k;}});
+    if(u===null||u===end)break;vis[u]=true;
+    adj[u].forEach(v=>{const d=dist[u]+nd(u,v);if(d<dist[v]){dist[v]=d;prev[v]=u;}});
+  }
+  const path=[];let cur=end;while(cur){path.unshift(cur);cur=prev[cur];}
+  return{path,dist:dist[end]};
+}
+
+// ── EDGE SEGMENTS ──────────────────────────────────────────────
+function projOnSeg(px,py,s){
+  const dx=s.bx-s.ax,dy=s.by-s.ay,len2=dx*dx+dy*dy;
+  if(len2===0)return{x:s.ax,y:s.ay};
+  let t=((px-s.ax)*dx+(py-s.ay)*dy)/len2;
+  t=Math.max(0,Math.min(1,t));
+  return{x:s.ax+t*dx,y:s.ay+t*dy,t:t};
+}
+
+function ptDist(a,b){return Math.sqrt((a.x-b.x)**2+(a.y-b.y)**2);}
+
+function findNearestSeg(px,py){
+  let best=null,bd=Infinity;
+  segs.forEach(s=>{const p=projOnSeg(px,py,s);const d=ptDist({x:px,y:py},p);if(d<bd){bd=d;best=s;}});
+  return{seg:best,dist:bd};
+}
+
+function pickNextEdge(currentSeg,leavingEnd,mousePt){
+  const jx=leavingEnd==='a'?currentSeg.ax:currentSeg.bx;
+  const jy=leavingEnd==='a'?currentSeg.ay:currentSeg.by;
+  const candidates=segs.filter(s=>{
+    if(s===currentSeg)return false;
+    return(s.ax===jx&&s.ay===jy)||(s.bx===jx&&s.by===jy);
+  });
+  if(candidates.length===0)return null;
+  const mdx=mousePt.x-jx,mdy=mousePt.y-jy;
+  const mLen=Math.sqrt(mdx*mdx+mdy*mdy);
+  if(mLen<1)return candidates[0];
+  let best=null,bestScore=-2;
+  candidates.forEach(s=>{
+    const ox=(s.ax===jx&&s.ay===jy)?s.bx:s.ax;
+    const oy=(s.ax===jx&&s.ay===jy)?s.by:s.ay;
+    const odx=ox-jx,ody=oy-jy;
+    const oLen=Math.sqrt(odx*odx+ody*ody);
+    if(oLen<1)return;
+    const score=(odx/oLen)*(mdx/mLen)+(ody/oLen)*(mdy/mLen);
+    if(score>bestScore){bestScore=score;best=s;}
+  });
+  return best;
+}
+
+// ── STATE ──────────────────────────────────────────────────────
+let phase='welcome',currentRoom=null;
+let dragNode=null, clickStart={x:0,y:0,time:0};
+let isDrawing=false;
+let totalScore=0,roundNum=0;
+let stats={perfect:0,good:0,missed:0};
+let shortestPathLen=0,shortestPathNodes=[];
+let animT=0,mapImg=null,fireFlashT=0;
+let currentSeg=null, segT=0, snapPath=[], lastJunction=null, lastT=0, segDir=1;
+
+// ── DOM ────────────────────────────────────────────────────────
+const gameEl=document.getElementById('game'),canvas=document.getElementById('c'),ctx=canvas.getContext('2d');
+const welcomeEl=document.getElementById('welcome'),resultEl=document.getElementById('result');
+const hudEl=document.getElementById('hud'),hudRoom=document.getElementById('hud-room');
+const hudScore=document.getElementById('hud-score'),hudRound=document.getElementById('hud-round');
+const rIcon=document.getElementById('rIcon'),rTitle=document.getElementById('rTitle');
+const rMsg=document.getElementById('rMsg'),rHint=document.getElementById('rHint');
+const rStats=document.getElementById('rStats'),rBtns=document.getElementById('rBtns');
+const btnEdit=document.getElementById('btnEdit'),editPanel=document.getElementById('edit-panel'),editExport=document.getElementById('edit-export'),btnEditClose=document.getElementById('btnEditClose');
+canvas.width=CW;canvas.height=CH;
+
+function fit(){gameEl.style.transform='scale('+Math.min(innerWidth/CW,innerHeight/CH,1.5)+')';}
+addEventListener('resize',fit);addEventListener('orientationchange',()=>setTimeout(fit,120));fit();
+
+function loadMap(){
+  const img=new Image();
+  img.onload=()=>{mapImg=img;};
+  img.onerror=()=>{const i2=new Image();i2.onload=()=>{mapImg=i2;};i2.src='cmr-emergency-plan.jpg';};
+  img.src='cmr-emergency-plan-main.png';
+}
+loadMap();
+
+function toCanvas(cx,cy){const r=canvas.getBoundingClientRect();return{x:(cx-r.left)*(CW/r.width),y:(cy-r.top)*(CH/r.height)};}
+
+// ── RENDERING ──────────────────────────────────────────────────
+function drawMap(){if(mapImg)ctx.drawImage(mapImg,0,0,CW,CH);}
+
+function drawCorridorNodes(){
+  ['L0','L1','L2','L3','L4','M0','M1','M2','M3','C0','C1','C2','C3','C4','R0','R1','R2','R3'].forEach(k=>{
+    const n=N[k];
+    const g=ctx.createRadialGradient(n.x,n.y,0,n.x,n.y,8);
+    g.addColorStop(0,'rgba(59,130,246,.2)');g.addColorStop(1,'rgba(59,130,246,0)');
+    ctx.fillStyle=g;ctx.beginPath();ctx.arc(n.x,n.y,8,0,Math.PI*2);ctx.fill();
+    ctx.beginPath();ctx.arc(n.x,n.y,3,0,Math.PI*2);ctx.fillStyle='rgba(255,255,255,.2)';ctx.fill();
+  });
+}
+
+function drawGates(){
+  ['G1','G2','G3'].forEach(k=>{
+    const n=N[k], p=0.7+0.3*Math.sin(animT/350);
+    const g=ctx.createRadialGradient(n.x,n.y,0,n.x,n.y,30*p);
+    g.addColorStop(0,'rgba(16,185,129,.45)');g.addColorStop(1,'rgba(16,185,129,0)');
+    ctx.fillStyle=g;ctx.beginPath();ctx.arc(n.x,n.y,30*p,0,Math.PI*2);ctx.fill();
+    ctx.beginPath();ctx.arc(n.x,n.y,16+3*p,0,Math.PI*2);
+    ctx.strokeStyle='rgba(16,185,129,'+(0.4+0.3*p)+')';ctx.lineWidth=2;ctx.stroke();
+    ctx.font='16px serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('🚪',n.x,n.y);
+    ctx.font='bold 9px system-ui';ctx.fillStyle='#10b981';ctx.textAlign='center';
+    ctx.fillText('EXIT',n.x,n.y+22);
+  });
+}
+
+function drawTarget(){
+  const asm=N.ASSEMBLY,p=0.7+0.3*Math.sin(animT/350);
+  const g=ctx.createRadialGradient(asm.x,asm.y,0,asm.x,asm.y,40*p);
+  g.addColorStop(0,'rgba(251,191,36,.45)');g.addColorStop(1,'rgba(251,191,36,0)');
+  ctx.fillStyle=g;ctx.beginPath();ctx.arc(asm.x,asm.y,40*p,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.arc(asm.x,asm.y,24+4*p,0,Math.PI*2);
+  ctx.strokeStyle='rgba(251,191,36,'+(0.4+0.3*p)+')';ctx.lineWidth=2.5;ctx.stroke();
+  ctx.font='24px serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('⭐',asm.x,asm.y);
+  ctx.font='bold 10px system-ui';ctx.fillStyle='#fbbf24';ctx.textAlign='center';
+  ctx.fillText('ASSEMBLY',asm.x,asm.y+22);ctx.fillText('AREA',asm.x,asm.y+34);
+}
+
+function drawFireFlash(t){
+  if(fireFlashT<=0||!currentRoom)return;
+  const el=t-fireFlashT;if(el>2500){fireFlashT=0;return;}
+  const n=N[currentRoom.nodeId],pr=el/2500,fade=1-pr,pulse=Math.sin(el/100)*0.3+0.7;
+  const r1=60+40*pr;ctx.save();ctx.beginPath();ctx.arc(n.x,n.y,r1,0,Math.PI*2);
+  ctx.strokeStyle='rgba(239,68,68,'+(fade*0.6*pulse)+')';ctx.lineWidth=4+3*(1-pr);ctx.stroke();ctx.restore();
+  const r2=40+60*pr;ctx.save();ctx.beginPath();ctx.arc(n.x,n.y,r2,0,Math.PI*2);
+  ctx.strokeStyle='rgba(239,68,68,'+(fade*0.3*pulse)+')';ctx.lineWidth=2;ctx.stroke();ctx.restore();
+  if(pr<0.7){ctx.save();ctx.font='bold 16px system-ui';ctx.textAlign='center';
+  ctx.fillStyle='rgba(239,68,68,'+(fade*0.9)+')';ctx.fillText('🔥 FIRE HERE',n.x,n.y-50-20*pr);ctx.restore();}
+}
+
+function drawFire(room,t){
+  const n=N[room.nodeId],fx=n.x,fy=n.y,p=0.7+0.3*Math.sin(t/260);
+  ctx.beginPath();ctx.arc(fx,fy,30+8*p,0,Math.PI*2);
+  ctx.fillStyle='rgba(239,68,68,'+(0.15+0.1*p)+')';ctx.fill();
+  ctx.strokeStyle='rgba(239,68,68,'+(0.4+0.2*p)+')';ctx.lineWidth=3;ctx.stroke();
+  for(let i=3;i>=1;i--){
+    const r=(18+i*12)*p,a=0.08/i;
+    const g=ctx.createRadialGradient(fx,fy,0,fx,fy,r);
+    g.addColorStop(0,'rgba(255,80,0,'+(a*1.5)+')');g.addColorStop(0.5,'rgba(255,40,0,'+a+')');g.addColorStop(1,'rgba(255,0,0,0)');
+    ctx.fillStyle=g;ctx.beginPath();ctx.arc(fx,fy,r,0,Math.PI*2);ctx.fill();
+  }
+  ctx.font=(28+5*p)+'px serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('🔥',fx,fy);
+  ctx.font='bold 11px system-ui';ctx.fillStyle='rgba(255,255,255,'+(0.5+0.3*p)+')';ctx.textAlign='center';
+  ctx.fillText('START HERE',fx,fy+30);
+}
+
+function drawSnapPath(path){
+  if(!path||path.length<2)return;
+  ctx.save();ctx.strokeStyle='rgba(59,130,246,.3)';ctx.lineWidth=16;
+  ctx.lineCap='round';ctx.lineJoin='round';ctx.shadowColor='#3b82f6';ctx.shadowBlur=22;
+  ctx.beginPath();ctx.moveTo(path[0].x,path[0].y);
+  for(let i=1;i<path.length;i++)ctx.lineTo(path[i].x,path[i].y);
+  ctx.stroke();ctx.restore();
+  ctx.save();ctx.strokeStyle='#3b82f6';ctx.lineWidth=6;
+  ctx.lineCap='round';ctx.lineJoin='round';
+  ctx.beginPath();ctx.moveTo(path[0].x,path[0].y);
+  for(let i=1;i<path.length;i++)ctx.lineTo(path[i].x,path[i].y);
+  ctx.stroke();ctx.restore();
+  const last=path[path.length-1];
+  ctx.save();ctx.beginPath();ctx.arc(last.x,last.y,9,0,Math.PI*2);
+  ctx.fillStyle='#fff';ctx.shadowColor='#3b82f6';ctx.shadowBlur=16;ctx.fill();ctx.restore();
+  ctx.save();ctx.beginPath();ctx.arc(path[0].x,path[0].y,7,0,Math.PI*2);
+  ctx.fillStyle='#ef4444';ctx.shadowColor='#ef4444';ctx.shadowBlur=12;ctx.fill();ctx.restore();
+}
+
+function drawShortestPath(pn){
+  if(!pn||pn.length<2)return;
+  ctx.save();ctx.strokeStyle='rgba(34,197,94,.3)';ctx.lineWidth=3;
+  ctx.setLineDash([8,5]);ctx.lineCap='round';
+  ctx.beginPath();ctx.moveTo(N[pn[0]].x,N[pn[0]].y);
+  for(let i=1;i<pn.length;i++)ctx.lineTo(N[pn[i]].x,N[pn[i]].y);
+  ctx.stroke();ctx.restore();
+}
+
+function render(t){
+  animT=t||0;ctx.clearRect(0,0,CW,CH);
+  drawMap();
+  if (phase === 'edit') {
+    ctx.strokeStyle = 'rgba(255,255,255,0.3)'; ctx.lineWidth=2;
+    EDGES.forEach(([a,b]) => {
+      ctx.beginPath(); ctx.moveTo(N[a].x,N[a].y); ctx.lineTo(N[b].x,N[b].y); ctx.stroke();
+    });
+    Object.keys(N).forEach(k => {
+      const n = N[k];
+      ctx.fillStyle = (n === dragNode) ? '#ef4444' : '#3b82f6';
+      ctx.beginPath(); ctx.arc(n.x, n.y, 8, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = '#fff'; ctx.font='10px sans-serif'; ctx.textAlign='center';
+      ctx.fillText(k, n.x, n.y - 12);
+    });
+  } else {
+    drawCorridorNodes(); drawTarget(); drawGates();
+    if(phase==='evaluated'&&shortestPathNodes.length>1)drawShortestPath(shortestPathNodes);
+    if(snapPath.length>1)drawSnapPath(snapPath);
+    if((phase==='playing'||phase==='evaluated')&&currentRoom){drawFire(currentRoom,animT);drawFireFlash(animT);}
+  }
+  requestAnimationFrame(render);
+}
+requestAnimationFrame(render);
+
+// ── INPUT HANDLING ─────────────────────────────────────────────
+function onStart(cx,cy){
+  const pt=toCanvas(cx,cy);
+  if (phase === 'edit') {
+    let best=null, bd=20;
+    Object.keys(N).forEach(k=>{const d=ptDist(pt,N[k]); if(d<bd){bd=d;best=N[k];}});
+    if (best) dragNode = best;
+    return;
+  }
+  
+  if(phase!=='playing')return;
+  clickStart = {x: pt.x, y: pt.y, time: performance.now()};
+  
+  const near=findNearestSeg(pt.x,pt.y);
+  if(!near.seg||near.dist>100)return;
+  isDrawing=true;
+  currentSeg=near.seg;
+  const dA=ptDist(pt,{x:currentSeg.ax,y:currentSeg.ay});
+  const dB=ptDist(pt,{x:currentSeg.bx,y:currentSeg.by});
+  segT=dA<=dB?0:1;
+  lastJunction=dA<=dB?currentSeg.aKey:currentSeg.bKey;
+  lastT=segT;
+  segDir=dA<=dB?1:-1;
+  const startPt=dA<=dB?{x:currentSeg.ax,y:currentSeg.ay}:{x:currentSeg.bx,y:currentSeg.by};
+  snapPath=[startPt];
+}
+
+function onMove(cx,cy){
+  const pt=toCanvas(cx,cy);
+  if (phase === 'edit' && dragNode) {
+    dragNode.x = Math.round(pt.x);
+    dragNode.y = Math.round(pt.y);
+    return;
+  }
+  
+  if(!isDrawing||phase!=='playing'||!currentSeg)return;
+  const proj=projOnSeg(pt.x,pt.y,currentSeg);
+  const t=proj.t;
+  const AT_END_A=t<0.05, AT_END_B=t>0.95;
+
+  if(AT_END_A||AT_END_B){
+    const leavingEnd=AT_END_A?'a':'b';
+    const junctionKey=AT_END_A?currentSeg.aKey:currentSeg.bKey;
+    const junctionPt=AT_END_A?{x:currentSeg.ax,y:currentSeg.ay}:{x:currentSeg.bx,y:currentSeg.by};
+    const distFromJunction=ptDist(pt,junctionPt);
+    if(junctionKey!==lastJunction&&distFromJunction>20){
+      snapPath.push(junctionPt);
+      lastJunction=junctionKey;
+      const next=pickNextEdge(currentSeg,leavingEnd,pt);
+      if(next){
+        currentSeg=next;
+        lastT=leavingEnd==='a'?0:1;
+        segDir=leavingEnd==='a'?1:-1;
+        return;
+      }
+      return;
+    }
+  } else {
+    const ix=currentSeg.ax+t*(currentSeg.bx-currentSeg.ax);
+    const iy=currentSeg.ay+t*(currentSeg.by-currentSeg.ay);
+    const last=snapPath[snapPath.length-1];
+    const tDelta=(t-lastT)*segDir;
+    if(tDelta>0.02&&ptDist(last,{x:ix,y:iy})>8){
+      snapPath.push({x:ix,y:iy});
+      lastT=t;
+    }
+  }
+}
+
+function onEnd(cx,cy){
+  if (phase === 'edit') {
+    if (dragNode) { dragNode = null; initGraph(); }
+    return;
+  }
+
+  if (phase === 'playing' && clickStart.time > 0) {
+    let pt = (cx !== undefined && cy !== undefined) ? toCanvas(cx, cy) : clickStart;
+    const dt = performance.now() - clickStart.time;
+    const dist = ptDist(pt, clickStart);
+    clickStart.time = 0;
+
+    if (dt < 400 && dist < 15) {
+      const exits = ['G1','G2','G3','ASSEMBLY'];
+      let clickedExit = null;
+      exits.forEach(ex => { if (ptDist(pt, N[ex]) < 40) clickedExit = ex; });
+      if (clickedExit) {
+        evaluateClick(clickedExit);
+        isDrawing = false;
+        currentSeg = null;
+        snapPath = [];
+        return;
+      }
+    }
+  }
+
+  if(!isDrawing)return;
+  isDrawing=false;
+  currentSeg=null;
+  if(phase!=='playing')return;
+  if(snapPath.length<2){snapPath=[];return;}
+  evaluatePath();
+}
+
+canvas.addEventListener('mousedown',e=>{e.preventDefault();onStart(e.clientX,e.clientY);});
+canvas.addEventListener('mousemove',e=>{e.preventDefault();onMove(e.clientX,e.clientY);});
+canvas.addEventListener('mouseup',e=>{e.preventDefault();onEnd(e.clientX,e.clientY);});
+canvas.addEventListener('mouseleave',()=>{if(isDrawing)onEnd();});
+
+canvas.addEventListener('touchstart',e=>{e.preventDefault();const t=e.touches[0];onStart(t.clientX,t.clientY);},{passive:false});
+canvas.addEventListener('touchmove',e=>{e.preventDefault();const t=e.touches[0];onMove(t.clientX,t.clientY);},{passive:false});
+canvas.addEventListener('touchend',e=>{e.preventDefault();onEnd();},{passive:false});
+canvas.addEventListener('touchcancel',e=>{e.preventDefault();if(isDrawing)onEnd();},{passive:false});
+
+// ── EVALUATION ─────────────────────────────────────────────────
+function getNearestExits(roomNode) {
+  const exits = ['G1','G2','G3','ASSEMBLY'];
+  let minD = Infinity;
+  let dists = {};
+  exits.forEach(ex => {
+    const shortest = dijkstra(roomNode, ex);
+    dists[ex] = { dist: shortest.dist, path: shortest.path };
+    if (shortest.dist < minD) minD = shortest.dist;
+  });
+  return { dists, minD };
+}
+
+function evaluateClick(exitNode) {
+  phase = 'evaluated';
+  const roomNode = currentRoom ? currentRoom.nodeId : 'HOT';
+  const allExits = getNearestExits(roomNode);
+  const myExitInfo = allExits.dists[exitNode];
+  
+  shortestPathLen = myExitInfo.dist;
+  shortestPathNodes = myExitInfo.path;
+  const isNearest = Math.abs(myExitInfo.dist - allExits.minD) < 1;
+  showResult(true, exitNode, shortestPathLen, isNearest ? 100 : 80);
+}
+
+function evaluatePath(){
+  phase='evaluated';
+  const endPt=snapPath[snapPath.length-1];
+  const roomNode=currentRoom?currentRoom.nodeId:'HOT';
+  
+  let endNode=null,minD=Infinity;
+  Object.keys(N).forEach(k=>{const d=ptDist(endPt,N[k]);if(d<minD){minD=d;endNode=k;}});
+
+  const allExits = getNearestExits(roomNode);
+  const isTargetExit = ['G1','G2','G3','ASSEMBLY'].includes(endNode);
+
+  let userPathLen=0;
+  for(let i=1;i<snapPath.length;i++)userPathLen+=ptDist(snapPath[i-1],snapPath[i]);
+
+  if(!isTargetExit){
+    showResult(false, endNode, userPathLen, 0);
+    return;
+  }
+  
+  const myExitInfo = allExits.dists[endNode];
+  shortestPathLen = myExitInfo.dist;
+  shortestPathNodes = myExitInfo.path;
+  
+  const isNearest = Math.abs(myExitInfo.dist - allExits.minD) < 1;
+  const ratio=shortestPathLen/Math.max(userPathLen,1);
+  let score = Math.round(Math.min(ratio*100,100));
+  if (!isNearest) score = Math.round(score * 0.8);
+  
+  showResult(true, endNode, userPathLen, score);
+}
+
+function showResult(reached,gateNode,pathLen,score){
+  roundNum++;
+  if(reached&&score>=90)stats.perfect++;else if(reached)stats.good++;else stats.missed++;
+  totalScore+=(score||0);hudScore.textContent=totalScore;rBtns.innerHTML='';
+
+  const isAssembly = gateNode === 'ASSEMBLY' || (!gateNode && reached);
+  const exitName = isAssembly ? 'Assembly Area' : 'Exit Gate';
+
+  if(reached&&score>=90){
+    rIcon.textContent='🏆';rTitle.textContent=score+'% — Perfect Evacuation!';
+    rMsg.textContent=`You selected the optimal safe ${exitName}.`;
+    rHint.textContent='Shortest: '+Math.round(shortestPathLen)+'px | Yours: '+Math.round(pathLen)+'px';
+  }else if(reached){
+    rIcon.textContent='✅';rTitle.textContent=score+'% — Safe Escape!';
+    rMsg.textContent=`You reached a safe ${exitName}, but a shorter/nearer route was available.`;
+    rHint.textContent='Shortest: '+Math.round(shortestPathLen)+'px | Yours: '+Math.round(pathLen)+'px';
+  }else{
+    rIcon.textContent='❌';rTitle.textContent='0% — Incomplete Route';
+    rMsg.textContent="Your path didn't reach an Exit Gate or the Assembly Area.";
+    rHint.textContent='Draw from the fire or tap a safe exit (⭐ or 🚪).';
+  }
+
+  rStats.innerHTML='Rounds: <b>'+roundNum+'</b> · <span style="color:#34d399">Perfect: <b>'+stats.perfect+'</b></span> · <span style="color:#fbbf24">Safe: <b>'+stats.good+'</b></span> · <span style="color:#f87171">Missed: <b>'+stats.missed+'</b></span> · Total: <b style="color:#fbbf24">'+totalScore+'</b>';
+
+  addBtn(rBtns,'Next Round','g',()=>{hideEl(resultEl);startRound();});
+  if(!reached||score<90){
+    addBtn(rBtns,'Retry Room','a',()=>{
+      if(reached&&score)totalScore-=score;
+      if(reached&&score>=90)stats.perfect--;else if(reached)stats.good--;else stats.missed--;
+      roundNum--;hudScore.textContent=totalScore;hideEl(resultEl);startRound(currentRoom);
+    });
+  }
+  showOverlay(resultEl);
+}
+
+function addBtn(p,label,cls,fn){const b=document.createElement('button');b.className='btn btn-'+cls;b.textContent=label;b.addEventListener('click',fn);p.appendChild(b);}
+function showEl(el){el.classList.remove('h');}
+function hideEl(el){el.classList.add('h');}
+function showOverlay(el){hideEl(welcomeEl);hideEl(resultEl);showEl(el);}
+
+function pickRoom(){return ROOMS[Math.floor(Math.random()*ROOMS.length)];}
+function startRound(room){
+  currentRoom=room||pickRoom();isDrawing=false;currentSeg=null;
+  snapPath=[];shortestPathLen=0;shortestPathNodes=[];
+  phase='playing';fireFlashT=performance.now()+100;
+  hudRoom.textContent=currentRoom.name;hudRound.textContent=roundNum+1;
+  hideEl(welcomeEl);hideEl(resultEl);showEl(hudEl);
+}
+function startGame(){
+  roundNum=0;totalScore=0;stats={perfect:0,good:0,missed:0};
+  hudScore.textContent='0';hideEl(welcomeEl);hideEl(resultEl);showEl(hudEl);startRound();
+}
+
+document.getElementById('btnStart').addEventListener('click',startGame);
+
+btnEdit.addEventListener('click', () => {
+  if (phase === 'playing') {
+    phase = 'edit';
+    isDrawing = false;
+    currentSeg = null;
+    snapPath = [];
+    btnEdit.textContent = 'Export Map';
+    btnEdit.style.background = '#3b82f6';
+  } else if (phase === 'edit') {
+    let str = "const N={\n";
+    Object.keys(N).forEach(k => {
+      const n = N[k];
+      let props = `x:${n.x},y:${n.y}`;
+      if (n.room) props += `,room:true`;
+      if (n.target) props += `,target:true`;
+      if (n.gate) props += `,gate:true`;
+      str += `  ${k}:{${props}},\n`;
+    });
+    str += "};";
+    editExport.value = str;
+    showOverlay(editPanel);
+  }
+});
+
+btnEditClose.addEventListener('click', () => {
+  hideEl(editPanel);
+  phase = 'playing';
+  btnEdit.textContent = 'Edit Mode';
+  btnEdit.style.background = 'rgba(255,255,255,.1)';
+});
+
+})();
+</script>
+</body>
+</html>
