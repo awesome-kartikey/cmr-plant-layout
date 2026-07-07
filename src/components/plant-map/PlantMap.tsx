@@ -266,18 +266,18 @@ export function PlantMap({
           const lastPt = drawnPath[drawnPath.length - 1]
           // Try sliding horizontally
           if (!checkCollision(pt.x, lastPt.y)) {
-            setDrawnPath([...drawnPath, { x: pt.x, y: lastPt.y }])
+            setDrawnPath?.([...drawnPath, { x: pt.x, y: lastPt.y }])
             return
           }
           // Try sliding vertically
           if (!checkCollision(lastPt.x, pt.y)) {
-            setDrawnPath([...drawnPath, { x: lastPt.x, y: pt.y }])
+            setDrawnPath?.([...drawnPath, { x: lastPt.x, y: pt.y }])
             return
           }
         }
         return // Stuck, ignore movement but don't cancel drawing
       }
-      setDrawnPath([...drawnPath, pt])
+      setDrawnPath?.([...drawnPath, pt])
       return
     }
 
