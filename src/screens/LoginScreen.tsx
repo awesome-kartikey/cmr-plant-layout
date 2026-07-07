@@ -70,6 +70,17 @@ export default function LoginScreen() {
               {t("signUpButton")}
             </Button>
           </div>
+          {import.meta.env.DEV && (
+            <div className="mt-4 border-t pt-4">
+              <Button
+                variant="secondary"
+                className="w-full text-indigo-700 bg-indigo-50 hover:bg-indigo-100"
+                onClick={() => navigate("/training")}
+              >
+                Skip to Game (Dev Only)
+              </Button>
+            </div>
+          )}
         </CardContent>
       </Card>
 

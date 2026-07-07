@@ -60,7 +60,13 @@ export default function HomeScreen() {
     }))
   }, [search, results])
 
-  if (!user) { navigate("/login"); return null }
+  useEffect(() => {
+    if (!user) {
+      navigate("/login")
+    }
+  }, [user, navigate])
+
+  if (!user) return null
 
   return (
     <LayoutShell>
