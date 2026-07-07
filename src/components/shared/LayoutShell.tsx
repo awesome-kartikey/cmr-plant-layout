@@ -3,7 +3,8 @@ import { useTranslation } from "react-i18next"
 import { useNavigate } from "react-router-dom"
 import { useAuth } from "../../contexts/AuthContext"
 import { Button } from "../ui/button"
-
+import { useInstallPrompt } from "../../hooks/useInstallPrompt"
+import { Download } from "lucide-react"
 interface LayoutShellProps {
   children: ReactNode
   showHeader?: boolean
@@ -13,6 +14,7 @@ export function LayoutShell({ children, showHeader = true }: LayoutShellProps) {
   const { t, i18n } = useTranslation()
   const { user, logout } = useAuth()
   const navigate = useNavigate()
+  const { isInstallable, promptInstall } = useInstallPrompt()
 
   const handleLogout = async () => {
     await logout()
@@ -43,6 +45,17 @@ export function LayoutShell({ children, showHeader = true }: LayoutShellProps) {
               >
                 {i18n.language === "en" ? "हिंदी" : "English"}
               </button>
+              {isInstallable && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={promptInstall}
+                  className="flex items-center gap-1.5 bg-indigo-600 border-indigo-500 text-white hover:bg-indigo-500 hover:text-white transition-colors h-7 px-3 text-xs shadow-sm"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  Install App
+                </Button>
+              )}
               {user && (
                 <Button
                   variant="ghost"
