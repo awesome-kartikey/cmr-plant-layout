@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from "react"
-import { N as initialN, EDGES as initialEdges, buildGraph, projOnSeg, ptDist, EXITS, DEFAULT_GRAPH } from "../../lib/graph"
+import { N as initialN, EDGES as initialEdges, INITIAL_COLLISION_ZONES as initialCollisionZones, buildGraph, projOnSeg, ptDist, EXITS, DEFAULT_GRAPH } from "../../lib/graph"
 import type { Point, Segment, GraphNodes, EdgeDef, NodeDef } from "../../lib/graph"
 import { FireEffect } from "./FireEffect"
 
@@ -7,15 +7,15 @@ interface PlantMapProps {
   phase: "hazard-confirm" | "exit-select" | "path-draw" | "evaluated" | "edit"
   hazardNode: string | null
   selectedExit?: string
-  drawnPath?: string[]
-  setDrawnPath?: (path: string[]) => void
+  drawnPath?: Point[]
+  setDrawnPath?: (path: Point[]) => void
   onHazardConfirmed?: () => void
   onExitSelected?: (exitNode: string) => void
-  onPathComplete?: (path: string[]) => void
+  onPathComplete?: (path: Point[]) => void
 }
 
 type EditTool = "drag" | "add" | "connect" | "delete" | "trace"
-type EditLayer = "path" | "hazard"
+type EditLayer = "path" | "hazard" | "blocks"
 
 export function PlantMap({ 
   phase, 
@@ -32,6 +32,8 @@ export function PlantMap({
   // Graph State
   const [nodes, setNodes] = useState<GraphNodes>(initialN)
   const [edges, setEdges] = useState<EdgeDef[]>(initialEdges)
+  const [collisionZones, setCollisionZones] = useState(initialCollisionZones)
+  const [dragZone, setDragZone] = useState<{ id: string, type: 'move' | 'resize' } | null>(null)
   
   // Trace / Move Cursor State (used for edit trace)
   const [traceCursor, setTraceCursor] = useState<Point | null>(null)
@@ -124,29 +126,13 @@ export function PlantMap({
     return best
   }
 
-  const handlePathNodeClick = (nodeId: string) => {
-    if (phase !== "path-draw") return
-    
-    const lastIdx = drawnPath.length - 1
-    if (drawnPath[lastIdx] === nodeId) {
-      return
-    }
-    if (lastIdx > 0 && drawnPath[lastIdx - 1] === nodeId) {
-      // Undo last step if they click previous node
-      const newPath = drawnPath.slice(0, -1)
-      setDrawnPath?.(newPath)
-      return
-    }
-    
-    const lastNode = drawnPath[lastIdx]
-    const isAdj = DEFAULT_GRAPH.adj[lastNode]?.includes(nodeId)
-    if (isAdj) {
-      const newPath = [...drawnPath, nodeId]
-      setDrawnPath?.(newPath)
-      if (nodeId === "ASSEMBLY" && onPathComplete) {
-        onPathComplete(newPath)
-      }
-    }
+  const checkCollision = (x: number, y: number) => {
+    return collisionZones.some(zone => 
+      x >= zone.x && 
+      x <= zone.x + zone.width && 
+      y >= zone.y && 
+      y <= zone.y + zone.height
+    )
   }
 
   const onPointerDown = (e: React.PointerEvent) => {
@@ -171,15 +157,33 @@ export function PlantMap({
     }
 
     if (phase === "path-draw") {
+      if (checkCollision(pt.x, pt.y)) return // Block start inside collision zone
       setIsDrawing(true)
-      const targetNode = getNodeAtPoint(pt, 25)
-      if (targetNode) {
-        handlePathNodeClick(targetNode)
-      }
+      setDrawnPath?.([pt])
       return
     }
     
     if (phase === "edit") {
+      if (editLayer === "blocks") {
+        if (editTool === "add") {
+          const newId = `block-${Date.now()}`
+          setCollisionZones([...collisionZones, { id: newId, x: pt.x - 50, y: pt.y - 50, width: 100, height: 100 }])
+        } else if (editTool === "delete") {
+          const clicked = collisionZones.find(z => pt.x >= z.x && pt.x <= z.x + z.width && pt.y >= z.y && pt.y <= z.y + z.height)
+          if (clicked) setCollisionZones(collisionZones.filter(z => z.id !== clicked.id))
+        } else if (editTool === "drag") {
+          const clicked = collisionZones.find(z => pt.x >= z.x && pt.x <= z.x + z.width && pt.y >= z.y && pt.y <= z.y + z.height)
+          if (clicked) {
+            if (pt.x > clicked.x + clicked.width - 20 && pt.y > clicked.y + clicked.height - 20) {
+              setDragZone({ id: clicked.id, type: 'resize' })
+            } else {
+              setDragZone({ id: clicked.id, type: 'move' })
+            }
+          }
+        }
+        return
+      }
+
       const targetNode = getNodeAtPoint(pt)
       
       if (e.button === 2) {
@@ -256,29 +260,41 @@ export function PlantMap({
   const onPointerMove = (e: React.PointerEvent) => {
     const pt = screenToSVG(e)
     
-    if (phase === "path-draw" && isDrawing) {
-      const lastNode = drawnPath?.[drawnPath.length - 1]
-      if (lastNode) {
-        const adjNodes = DEFAULT_GRAPH.adj[lastNode] || []
-        adjNodes.forEach(nodeId => {
-          const n = nodes[nodeId]
-          if (n && ptDist(pt, n) < 22) {
-            // Dragged close to adjacent node - append it!
-            if (drawnPath && !drawnPath.includes(nodeId)) {
-              const newPath = [...drawnPath, nodeId]
-              setDrawnPath?.(newPath)
-              if (nodeId === "ASSEMBLY" && onPathComplete) {
-                setIsDrawing(false)
-                onPathComplete(newPath)
-              }
-            }
+    if (phase === "path-draw" && isDrawing && drawnPath) {
+      if (checkCollision(pt.x, pt.y)) {
+        if (drawnPath.length > 0) {
+          const lastPt = drawnPath[drawnPath.length - 1]
+          // Try sliding horizontally
+          if (!checkCollision(pt.x, lastPt.y)) {
+            setDrawnPath([...drawnPath, { x: pt.x, y: lastPt.y }])
+            return
           }
-        })
+          // Try sliding vertically
+          if (!checkCollision(lastPt.x, pt.y)) {
+            setDrawnPath([...drawnPath, { x: lastPt.x, y: pt.y }])
+            return
+          }
+        }
+        return // Stuck, ignore movement but don't cancel drawing
       }
+      setDrawnPath([...drawnPath, pt])
       return
     }
 
     if (phase === "edit") {
+      if (editLayer === "blocks" && dragZone) {
+        setCollisionZones(prev => prev.map(z => {
+          if (z.id === dragZone.id) {
+            if (dragZone.type === 'move') {
+              return { ...z, x: pt.x - z.width/2, y: pt.y - z.height/2 }
+            } else if (dragZone.type === 'resize') {
+              return { ...z, width: Math.max(20, pt.x - z.x), height: Math.max(20, pt.y - z.y) }
+            }
+          }
+          return z
+        }))
+        return
+      }
       if (editTool === "trace" && lastTraceNode) {
         setTraceCursor(pt)
       }
@@ -294,8 +310,23 @@ export function PlantMap({
   }
 
   const onPointerUp = (e: React.PointerEvent) => {
+    if (phase === "path-draw" && isDrawing) {
+      setIsDrawing(false)
+      const assemblyNode = nodes["ASSEMBLY"]
+      if (assemblyNode && drawnPath && drawnPath.length > 0) {
+        const pt = screenToSVG(e)
+        // Check if released near assembly area
+        if (ptDist(pt, assemblyNode) < 120) {
+          if (onPathComplete) onPathComplete(drawnPath)
+        }
+      }
+      return
+    }
     setIsDrawing(false)
     if (phase === "edit") {
+      if (editLayer === "blocks") {
+        setDragZone(null)
+      }
       if (dragNode) {
         if (editTool === "drag") {
           const pt = screenToSVG(e)
@@ -335,6 +366,11 @@ export function PlantMap({
       }
       str += "\n"
     }
+    str += "]\n\n"
+    str += "export const INITIAL_COLLISION_ZONES = [\n"
+    collisionZones.forEach(z => {
+      str += `  { id: '${z.id}', x: ${Math.round(z.x)}, y: ${Math.round(z.y)}, width: ${Math.round(z.width)}, height: ${Math.round(z.height)} },\n`
+    })
     str += "]"
     
     navigator.clipboard.writeText(str).then(() => alert("Code copied to clipboard!"))
@@ -453,11 +489,31 @@ export function PlantMap({
           return <line key={i} x1={nodes[a].x} y1={nodes[a].y} x2={nodes[b].x} y2={nodes[b].y} stroke={`rgba(255,255,255,${edgeOpacity})`} strokeWidth="3" />
         })}
 
+        {/* Render Collision Zones */}
+        {phase === "edit" && collisionZones.map(zone => (
+          <g key={zone.id}>
+            <rect 
+              x={zone.x} y={zone.y} width={zone.width} height={zone.height} 
+              fill={editLayer === "blocks" ? "rgba(239, 68, 68, 0.4)" : "rgba(239, 68, 68, 0.1)"} 
+              stroke={editLayer === "blocks" ? "#ef4444" : "none"}
+              strokeWidth="2"
+              className={editLayer === "blocks" ? (editTool === "drag" ? "cursor-move" : "pointer-events-auto") : "pointer-events-none"}
+            />
+            {editLayer === "blocks" && (
+              <rect
+                x={zone.x + zone.width - 15} y={zone.y + zone.height - 15} width={15} height={15}
+                fill="#ef4444"
+                className={editTool === "drag" ? "cursor-se-resize" : "pointer-events-none"}
+              />
+            )}
+          </g>
+        ))}
+
         {/* Render Traced Neon Evacuation Path (Gameplay mode) */}
         {phase === "path-draw" && drawnPath && drawnPath.length > 0 && (
           <g>
             <path
-              d={drawnPath.map((id, idx) => `${idx === 0 ? "M" : "L"} ${nodes[id]?.x} ${nodes[id]?.y}`).join(" ")}
+              d={drawnPath.map((p, idx) => `${idx === 0 ? "M" : "L"} ${p.x} ${p.y}`).join(" ")}
               fill="none"
               stroke="rgba(16, 185, 129, 0.4)"
               strokeWidth="9"
@@ -467,7 +523,7 @@ export function PlantMap({
               className="pointer-events-none"
             />
             <path
-              d={drawnPath.map((id, idx) => `${idx === 0 ? "M" : "L"} ${nodes[id]?.x} ${nodes[id]?.y}`).join(" ")}
+              d={drawnPath.map((p, idx) => `${idx === 0 ? "M" : "L"} ${p.x} ${p.y}`).join(" ")}
               fill="none"
               stroke="#10b981"
               strokeWidth="3.5"
@@ -594,51 +650,7 @@ export function PlantMap({
           </g>
         )}
 
-        {/* Render pulsing adjacent nodes targets to trace path */}
-        {phase === "path-draw" && (() => {
-          const lastNode = drawnPath?.[drawnPath.length - 1]
-          const adjNodes = lastNode ? DEFAULT_GRAPH.adj[lastNode] || [] : []
-          return adjNodes.map(nodeId => {
-            const n = nodes[nodeId]
-            if (!n) return null
-            return (
-              <g 
-                key={`adj-${nodeId}`} 
-                className="cursor-pointer"
-                onPointerDown={(e) => {
-                  e.stopPropagation()
-                  handlePathNodeClick(nodeId)
-                }}
-              >
-                <circle 
-                  cx={n.x} 
-                  cy={n.y} 
-                  r="20" 
-                  fill="rgba(56, 189, 248, 0.2)" 
-                  className="animate-pulse" 
-                />
-                <circle 
-                  cx={n.x} 
-                  cy={n.y} 
-                  r="14" 
-                  fill="rgba(56, 189, 248, 0.15)" 
-                  stroke="#38bdf8"
-                  strokeWidth="2"
-                  className="animate-ping" 
-                  style={{ transformOrigin: `${n.x}px ${n.y}px` }}
-                />
-                <circle 
-                  cx={n.x} 
-                  cy={n.y} 
-                  r="6" 
-                  fill="#38bdf8" 
-                  stroke="white"
-                  strokeWidth="2.5"
-                />
-              </g>
-            )
-          })
-        })()}
+
 
       </svg>
 
@@ -670,6 +682,12 @@ export function PlantMap({
                 className={`flex-1 px-3 py-1 text-xs font-bold rounded ${editLayer === "hazard" ? "bg-red-600 text-white" : "text-gray-400"}`}
               >
                 🔥 Hazards
+              </button>
+              <button 
+                onClick={() => setEditLayer("blocks")} 
+                className={`flex-1 px-3 py-1 text-xs font-bold rounded ${editLayer === "blocks" ? "bg-orange-600 text-white" : "text-gray-400"}`}
+              >
+                🧱 Blocks
               </button>
             </div>
             

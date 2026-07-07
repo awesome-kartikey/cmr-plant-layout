@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next"
 import { useTest } from "../contexts/TestContext"
 import { LayoutShell } from "../components/shared/LayoutShell"
 import { PlantMap } from "../components/plant-map/PlantMap"
+import type { Point } from "../lib/graph"
 import { N, ROOMS, dijkstra, ptDist, DEFAULT_GRAPH } from "../lib/graph"
 import { Flame, DoorOpen, Route, Timer, Undo2, RotateCcw } from "lucide-react"
 import { Button } from "../components/ui/button"
@@ -18,7 +19,7 @@ export default function TrainingScreen() {
   const [phase, setPhase] = useState<Phase>("hazard-confirm")
   const [hazardNode, setHazardNode] = useState<string>("")
   const [selectedExit, setSelectedExit] = useState<string>("")
-  const [drawnPath, setDrawnPath] = useState<string[]>([])
+  const [drawnPath, setDrawnPath] = useState<Point[]>([])
   
   // Scoring / Details
   const [resultTitle, setResultTitle] = useState("")
@@ -59,11 +60,11 @@ export default function TrainingScreen() {
 
   const handleExitSelected = (exitNode: string) => {
     setSelectedExit(exitNode)
-    setDrawnPath([exitNode])
+    setDrawnPath([])
     setPhase("path-draw")
   }
 
-  const handlePathComplete = (finalPath: string[]) => {
+  const handlePathComplete = (finalPath: Point[]) => {
     const duration = Date.now() - drawStartTime
     
     // 1. Grade Exit Selection (Max 50 pts)
@@ -88,7 +89,7 @@ export default function TrainingScreen() {
     
     let userPathDist = 0
     for (let i = 0; i < finalPath.length - 1; i++) {
-      userPathDist += ptDist(N[finalPath[i]], N[finalPath[i+1]])
+      userPathDist += ptDist(finalPath[i], finalPath[i+1])
     }
 
     const deviation = Math.max(0, userPathDist - shortestPathDist)
@@ -135,7 +136,7 @@ export default function TrainingScreen() {
       nearestExit: isNearest ? "Nearest Gate" : "Further Gate",
       selectedExit,
       points: totalAttemptScore,
-      pathDrawn: finalPath.map(id => N[id]),
+      pathDrawn: finalPath,
       pathScore: {
         score: totalAttemptScore,
         deviation,
@@ -152,7 +153,7 @@ export default function TrainingScreen() {
   }
 
   const handleClear = () => {
-    setDrawnPath([selectedExit])
+    setDrawnPath([])
   }
 
   const handleNextRound = () => {
@@ -166,9 +167,7 @@ export default function TrainingScreen() {
   // Telemetry Calculations for real-time overlay
   let userPathDist = 0
   for (let i = 0; i < drawnPath.length - 1; i++) {
-    if (N[drawnPath[i]] && N[drawnPath[i+1]]) {
-      userPathDist += ptDist(N[drawnPath[i]], N[drawnPath[i+1]])
-    }
+    userPathDist += ptDist(drawnPath[i], drawnPath[i+1])
   }
   const { dist: shortestPathDist } = selectedExit 
     ? dijkstra(N, DEFAULT_GRAPH.adj, selectedExit, "ASSEMBLY") 
