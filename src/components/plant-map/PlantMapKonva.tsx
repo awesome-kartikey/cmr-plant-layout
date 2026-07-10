@@ -1,11 +1,13 @@
 import { useState, useRef, useCallback, useEffect } from "react"
+import { Stage, Layer, Rect, Circle, Line, Group, Text, Path } from "react-konva"
+import { Html } from "react-konva-utils"
 import { getGridKey, type GridBlock, findShortestGridPath } from "../../lib/graph"
 import { N as initialN, EDGES as initialEdges, INITIAL_COLLISION_ZONES as initialCollisionZones, EXIT_ZONES as initialExitZones, PATH_BLOCKS as initialPathBlocks, buildGraph, projOnSeg, ptDist, EXITS, DEFAULT_GRAPH } from "../../lib/graph"
 import type { Point, Segment, GraphNodes, EdgeDef, NodeDef } from "../../lib/graph"
 import { FireEffect } from "./FireEffect"
 
 interface PlantMapProps {
-  phase: "tutorial" | "hazard-confirm" | "exit-select" | "path-draw" | "evaluated" | "edit"
+  phase: "idle" | "tutorial" | "hazard-confirm" | "exit-select" | "path-draw" | "evaluated" | "edit"
   hazardNode: string | null
   selectedExit?: string
   drawnPath?: Point[]
@@ -22,7 +24,7 @@ interface PlantMapProps {
 type EditTool = "drag" | "add" | "connect" | "delete" | "trace"
 type EditLayer = "path" | "hazard" | "blocks" | "exits"
 
-export function PlantMap({
+export function PlantMapKonva({
   phase,
   hazardNode,
   selectedExit,
@@ -36,7 +38,38 @@ export function PlantMap({
   wizardDrawnPaths = [],
   wizardSelectedExits = []
 }: PlantMapProps) {
-  const svgRef = useRef<SVGSVGElement>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const stageRef = useRef<any>(null)
+  const [dimensions, setDimensions] = useState({ width: 1000, height: 600 })
+
+  useEffect(() => {
+    if (!containerRef.current) return
+    const resizeObserver = new ResizeObserver(entries => {
+      for (const entry of entries) {
+        setDimensions({
+          width: entry.contentRect.width,
+          height: entry.contentRect.height
+        })
+      }
+    })
+    resizeObserver.observe(containerRef.current)
+    return () => resizeObserver.disconnect()
+  }, [])
+
+  const scaleX = dimensions.width / 1000
+  const scaleY = dimensions.height / 600
+
+  // For pointer coordinate transformation, we now need both
+  const screenToSVG = useCallback((): Point | null => {
+    const stage = stageRef.current
+    if (!stage) return null
+    const pos = stage.getPointerPosition()
+    if (!pos) return null
+    return {
+      x: pos.x / scaleX,
+      y: pos.y / scaleY,
+    }
+  }, [scaleX, scaleY])
 
   // Graph State
   const [nodes, setNodes] = useState<GraphNodes>(initialN)
@@ -104,26 +137,7 @@ export function PlantMap({
     return () => window.removeEventListener("keydown", handleKeyDown)
   }, [editTool, phase])
 
-  const screenToSVG = useCallback((e: React.PointerEvent | React.MouseEvent | React.TouchEvent): Point => {
-    const svg = svgRef.current
-    if (!svg) return { x: 0, y: 0 }
-    const rect = svg.getBoundingClientRect()
-    const viewBox = svg.viewBox.baseVal
 
-    let cx = 0, cy = 0
-    if ('clientX' in e) {
-      cx = (e as React.MouseEvent).clientX
-      cy = (e as React.MouseEvent).clientY
-    } else if ('touches' in e && e.touches.length > 0) {
-      cx = (e as React.TouchEvent).touches[0].clientX
-      cy = (e as React.TouchEvent).touches[0].clientY
-    }
-
-    return {
-      x: ((cx - rect.left) / rect.width) * viewBox.width,
-      y: ((cy - rect.top) / rect.height) * viewBox.height,
-    }
-  }, [])
 
   const isVisibleInLayer = (nodeKey: string) => {
     const n = nodes[nodeKey]
@@ -158,8 +172,9 @@ export function PlantMap({
     )
   }
 
-  const onPointerDown = (e: React.PointerEvent) => {
-    const pt = screenToSVG(e)
+  const onPointerDown = (e: any) => {
+    const pt = screenToSVG()
+    if (!pt) return
 
     if (phase === "hazard-confirm") {
       if (hazardNode && nodes[hazardNode]) {
@@ -235,7 +250,7 @@ export function PlantMap({
         const gx = Math.floor(pt.x / blockSize) * blockSize
         const gy = Math.floor(pt.y / blockSize) * blockSize
         const block = { x: gx, y: gy }
-        
+
         // Prevent adding duplicate block if it's identical to the last one
         setPathBlocks(prev => {
           const last = prev[prev.length - 1]
@@ -286,8 +301,9 @@ export function PlantMap({
     }
   }
 
-  const onPointerMove = (e: React.PointerEvent) => {
-    const pt = screenToSVG(e)
+  const onPointerMove = (e: any) => {
+    const pt = screenToSVG()
+    if (!pt) return
 
     if (phase === "path-draw" && isDrawing && drawnPath && !isWizard) {
       if (checkCollision(pt.x, pt.y)) {
@@ -341,14 +357,29 @@ export function PlantMap({
     }
   }
 
-  const onPointerUp = (e: React.PointerEvent) => {
+  const onPointerUp = (e: any) => {
     if (phase === "path-draw" && isDrawing && !isWizard) {
       setIsDrawing(false)
       const assemblyNode = nodes["ASSEMBLY"]
       if (assemblyNode && drawnPath && drawnPath.length > 0) {
-        const pt = screenToSVG(e)
+        const pt = screenToSVG()
+        if (!pt) return
         // Check if released near assembly area
         if (ptDist(pt, assemblyNode) < 120) {
+          const firstPoint = drawnPath[0];
+          const selectedExitNode = nodes[selectedExit];
+          // Ensure they drew a path from the selected exit, and it has some length
+          if (firstPoint && selectedExitNode && ptDist(firstPoint, selectedExitNode) > 100) {
+            alert("Please start drawing your path from the Exit Gate you selected!");
+            setDrawnPath?.([]);
+            return;
+          }
+          if (drawnPath.length < 5) {
+            alert("Path is too short. Please trace the actual route.");
+            setDrawnPath?.([]);
+            return;
+          }
+
           if (onPathComplete) onPathComplete(drawnPath)
         }
       }
@@ -362,7 +393,8 @@ export function PlantMap({
       }
       if (dragNode) {
         if (editTool === "drag") {
-          const pt = screenToSVG(e)
+          const pt = screenToSVG()
+          if (!pt) return
           const targetNode = getNodeAtPoint(pt)
           if (targetNode === dragNode) {
             setEditingNode(targetNode)
@@ -454,7 +486,7 @@ export function PlantMap({
     setEditingNode(null)
   }
 
-  const handleToolbarPointerDown = (e: React.PointerEvent) => {
+  const handleToolbarPointerDown = (e: any) => {
     toolbarDragRef.current = {
       isDragging: true,
       startX: e.clientX - toolbarPos.x,
@@ -462,7 +494,7 @@ export function PlantMap({
     }
       ; (e.target as HTMLElement).setPointerCapture(e.pointerId)
   }
-  const handleToolbarPointerMove = (e: React.PointerEvent) => {
+  const handleToolbarPointerMove = (e: any) => {
     if (toolbarDragRef.current.isDragging) {
       setToolbarPos({
         x: e.clientX - toolbarDragRef.current.startX,
@@ -470,7 +502,7 @@ export function PlantMap({
       })
     }
   }
-  const handleToolbarPointerUp = (e: React.PointerEvent) => {
+  const handleToolbarPointerUp = (e: any) => {
     toolbarDragRef.current.isDragging = false
       ; (e.target as HTMLElement).releasePointerCapture(e.pointerId)
   }
@@ -516,9 +548,9 @@ export function PlantMap({
     });
 
     results.sort((a, b) => {
-       if (a.score === Infinity) return 1;
-       if (b.score === Infinity) return -1;
-       return a.score - b.score;
+      if (a.score === Infinity) return 1;
+      if (b.score === Infinity) return -1;
+      return a.score - b.score;
     });
 
     setEvalHazards(results);
@@ -529,318 +561,336 @@ export function PlantMap({
     <div className="flex flex-row gap-4 w-full h-full justify-center items-start">
       <div
         className="relative w-full max-h-[80vh] max-w-[1000px] aspect-[1000/600] rounded-xl overflow-hidden shadow-2xl bg-[#0a0a16] border border-gray-800 select-none"
-      onContextMenu={(e) => {
-        if (phase === "edit" && editTool === "trace") {
-          e.preventDefault()
-          setLastTraceNode(null)
-          setTraceCursor(null)
-        }
-      }}
-    >
-      <img src="/map/cmr-emergency-plan-main.jpg" alt="Map" className="w-full h-full object-fill block pointer-events-none" />
-
-      <svg
-        ref={svgRef}
-        viewBox="0 0 1000 600"
-        preserveAspectRatio="none"
-        className="absolute inset-0 w-full h-full z-10 touch-none"
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onPointerLeave={onPointerUp}
+        onContextMenu={(e) => {
+          if (phase === "edit" && editTool === "trace") {
+            e.preventDefault()
+            setLastTraceNode(null)
+            setTraceCursor(null)
+          }
+        }}
       >
-        {/* Glow Filters */}
-        <defs>
-          <filter id="neon-glow" x="-20%" y="-20%" width="140%" height="140%">
-            <feGaussianBlur stdDeviation="5" result="blur" />
-            <feMerge>
-              <feMergeNode in="blur" />
-              <feMergeNode in="SourceGraphic" />
-            </feMerge>
-          </filter>
-        </defs>
+        <img src="/map/cmr-emergency-plan-main.jpg" alt="Map" className="absolute inset-0 w-full h-full object-fill block pointer-events-none" />
 
-        
+        <div ref={containerRef} className="absolute inset-0 w-full h-full z-10 touch-none">
+          <Stage
+            ref={stageRef}
+            width={dimensions.width}
+            height={dimensions.height}
+            scaleX={scaleX}
+            scaleY={scaleY}
+            onPointerDown={onPointerDown}
+            onPointerMove={onPointerMove}
+            onPointerUp={onPointerUp}
+            onPointerLeave={onPointerUp}
+          >
+            <Layer>
 
-        {/* Render Grid Blocks */}
-        {((phase === "edit" && editLayer === "path") || isWizard) && pathBlocks.map((b, idx) => (
-          <rect key={`pb-${idx}-${getGridKey(b)}`} x={b.x} y={b.y} width={blockSize} height={blockSize} fill="rgba(59, 130, 246, 0.4)" stroke="#3b82f6" strokeWidth="1" className="pointer-events-none" />
-        ))}
-        {/* Render Selected Eval Path */}
-        {phase === "evaluated" && selectedEvalPath.map(b => (
-          <rect key={`eval-${getGridKey(b)}`} x={b.x} y={b.y} width={blockSize} height={blockSize} fill="rgba(16, 185, 129, 0.6)" stroke="#10b981" strokeWidth="2" className="pointer-events-none" />
-        ))}
-        {/* Render Wizard Drawn Paths */}
-        {isWizard && wizardDrawnPaths.map((path, pathIdx) => {
-          const colors = [
-            { fill: "rgba(16, 185, 129, 0.8)", stroke: "#10b981" }, // Green
-            { fill: "rgba(245, 158, 11, 0.8)", stroke: "#f59e0b" }, // Orange
-            { fill: "rgba(14, 165, 233, 0.8)", stroke: "#0ea5e9" }  // Blue
-          ]
-          const c = colors[pathIdx] || colors[0]
-          return (
-            <g key={`wizard-path-${pathIdx}`}>
-              {path.map((b, idx) => (
-                <rect key={`wp-${pathIdx}-${idx}`} x={b.x + (pathIdx * 2)} y={b.y + (pathIdx * 2)} width={blockSize - (pathIdx * 4)} height={blockSize - (pathIdx * 4)} fill={c.fill} stroke={c.stroke} strokeWidth="2" className="pointer-events-none" />
+
+
+              {/* Render Grid Blocks */}
+              {((phase === "edit" && editLayer === "path") || isWizard) && pathBlocks.map((b, idx) => (
+                <Rect key={`pb-${idx}-${getGridKey(b)}`} x={b.x} y={b.y} width={blockSize} height={blockSize} fill="rgba(59, 130, 246, 0.4)" stroke="#3b82f6" strokeWidth={1} listening={false} />
               ))}
-            </g>
-          )
-        })}
-        {/* Render ACTIVE Wizard Drawn Path */}
-        {isWizard && phase === "path-draw" && drawnPath && drawnPath.map((b, idx) => {
-          const wizardRank = wizardSelectedExits.length;
-          const colors = [
-            { fill: "rgba(16, 185, 129, 0.8)", stroke: "#10b981" }, // Green
-            { fill: "rgba(245, 158, 11, 0.8)", stroke: "#f59e0b" }, // Orange
-            { fill: "rgba(14, 165, 233, 0.8)", stroke: "#0ea5e9" }  // Blue
-          ]
-          const c = colors[wizardRank] || colors[0]
-          return <rect key={`active-wp-${idx}`} x={b.x + (wizardRank * 2)} y={b.y + (wizardRank * 2)} width={blockSize - (wizardRank * 4)} height={blockSize - (wizardRank * 4)} fill={c.fill} stroke={c.stroke} strokeWidth="2" className="pointer-events-none" />
-        })}
+              {/* Render Selected Eval Path */}
+              {phase === "evaluated" && selectedEvalPath.map(b => (
+                <Rect key={`eval-${getGridKey(b)}`} x={b.x} y={b.y} width={blockSize} height={blockSize} fill="rgba(16, 185, 129, 0.6)" stroke="#10b981" strokeWidth={2} listening={false} />
+              ))}
+              {/* Render Wizard Drawn Paths */}
+              {isWizard && wizardDrawnPaths.map((path, pathIdx) => {
+                const colors = [
+                  { fill: "rgba(16, 185, 129, 0.8)", stroke: "#10b981" }, // Green
+                  { fill: "rgba(245, 158, 11, 0.8)", stroke: "#f59e0b" }, // Orange
+                  { fill: "rgba(14, 165, 233, 0.8)", stroke: "#0ea5e9" }  // Blue
+                ]
+                const c = colors[pathIdx] || colors[0]
+                return (
+                  <Group key={`wizard-path-${pathIdx}`}>
+                    {path.map((b, idx) => (
+                      <Rect key={`wp-${pathIdx}-${idx}`} x={b.x + (pathIdx * 2)} y={b.y + (pathIdx * 2)} width={blockSize - (pathIdx * 4)} height={blockSize - (pathIdx * 4)} fill={c.fill} stroke={c.stroke} strokeWidth={2} listening={false} />
+                    ))}
+                  </Group>
+                )
+              })}
+              {/* Render ACTIVE Wizard Drawn Path */}
+              {isWizard && phase === "path-draw" && drawnPath && drawnPath.map((b, idx) => {
+                const wizardRank = wizardSelectedExits.length;
+                const colors = [
+                  { fill: "rgba(16, 185, 129, 0.8)", stroke: "#10b981" }, // Green
+                  { fill: "rgba(245, 158, 11, 0.8)", stroke: "#f59e0b" }, // Orange
+                  { fill: "rgba(14, 165, 233, 0.8)", stroke: "#0ea5e9" }  // Blue
+                ]
+                const c = colors[wizardRank] || colors[0]
+                return <Rect key={`active-wp-${idx}`} x={b.x + (wizardRank * 2)} y={b.y + (wizardRank * 2)} width={blockSize - (wizardRank * 4)} height={blockSize - (wizardRank * 4)} fill={c.fill} stroke={c.stroke} strokeWidth={2} listening={false} />
+              })}
 
-        {/* Render Graph Edges (Edit Mode Only) */}
-        {phase === "edit" && edges.map(([a, b], i) => {
-          if (!nodes[a] || !nodes[b]) return null
-          const isHazardEdge = nodes[a].room || nodes[b].room
-          if (editLayer === "path" && isHazardEdge) return null
+              {/* Render Graph Edges (Edit Mode Only) */}
+              {phase === "edit" && edges.map(([a, b], i) => {
+                if (!nodes[a] || !nodes[b]) return null
+                const isHazardEdge = nodes[a].room || nodes[b].room
+                if (editLayer === "path" && isHazardEdge) return null
 
-          let edgeOpacity = 0.4
-          if (editLayer === "hazard" && !isHazardEdge) edgeOpacity = 0.1
+                let edgeOpacity = 0.4
+                if (editLayer === "hazard" && !isHazardEdge) edgeOpacity = 0.1
 
-          return <line key={i} x1={nodes[a].x} y1={nodes[a].y} x2={nodes[b].x} y2={nodes[b].y} stroke={`rgba(255,255,255,${edgeOpacity})`} strokeWidth="3" />
-        })}
+                return <Line key={i} x1={nodes[a].x} y1={nodes[a].y} x2={nodes[b].x} y2={nodes[b].y} stroke={`rgba(255,255,255,${edgeOpacity})`} strokeWidth={3} />
+              })}
 
-        {/* Render Collision Zones */}
-        {phase === "edit" && collisionZones.map(zone => (
-          <g key={zone.id}>
-            <rect
-              x={zone.x} y={zone.y} width={zone.width} height={zone.height}
-              fill={editLayer === "blocks" ? "rgba(239, 68, 68, 0.4)" : "rgba(239, 68, 68, 0.1)"}
-              stroke={editLayer === "blocks" ? "#ef4444" : "none"}
-              strokeWidth="2"
-              className={editLayer === "blocks" ? (editTool === "drag" ? "cursor-move" : "pointer-events-auto") : "pointer-events-none"}
-            />
-            {editLayer === "blocks" && (
-              <rect
-                x={zone.x + zone.width - 15} y={zone.y + zone.height - 15} width={15} height={15}
-                fill="#ef4444"
-                className={editTool === "drag" ? "cursor-se-resize" : "pointer-events-none"}
-              />
-            )}
-          </g>
-        ))}
-
-        {/* Render Exit Zones */}
-        {(phase === "exit-select" || phase === "tutorial" || phase === "edit") && exitZones.map(zone => {
-          const isNearest = phase === "tutorial" && selectedExit === zone.targetNode;
-          const isAll = phase === "exit-select";
-          const shouldFlash = isNearest || isAll;
-          if (phase === "edit" && editLayer !== "exits") return null;
-
-          const zoneIdentifier = isWizard ? zone.id : zone.targetNode;
-          const wizardRank = isWizard ? wizardSelectedExits.indexOf(zone.id) : -1;
-          const isWizardSelected = wizardRank !== -1;
-          const colors = [
-            { fill: "rgba(16, 185, 129, 0.6)", stroke: "#10b981" },
-            { fill: "rgba(245, 158, 11, 0.6)", stroke: "#f59e0b" },
-            { fill: "rgba(14, 165, 233, 0.6)", stroke: "#0ea5e9" }
-          ]
-          const activeColor = isWizardSelected ? (colors[wizardRank] || colors[0]) : { fill: "rgba(16, 185, 129, 0.3)", stroke: "#10b981" }
-
-          return (
-            <g key={zone.id}>
-              {shouldFlash && !isWizardSelected && (
-                <rect
-                  x={zone.x - 4} y={zone.y - 4} width={zone.width + 8} height={zone.height + 8}
-                  fill="none" stroke="#10b981" strokeWidth="2"
-                  className="animate-pulse pointer-events-none opacity-50"
-                  style={{ transformOrigin: `${zone.x + zone.width / 2}px ${zone.y + zone.height / 2}px` }}
-                />
-              )}
-              <rect
-                x={zone.x} y={zone.y} width={zone.width} height={zone.height}
-                fill={editLayer === "exits" ? "rgba(16, 185, 129, 0.4)" : shouldFlash ? activeColor.fill : "rgba(16, 185, 129, 0.1)"}
-                stroke={editLayer === "exits" ? "#10b981" : shouldFlash ? activeColor.stroke : "none"}
-                strokeWidth={isWizardSelected ? "4" : "2"}
-                className={editLayer === "exits" ? (editTool === "drag" ? "cursor-move" : "pointer-events-auto") : (phase === "exit-select" ? "cursor-pointer pointer-events-auto hover:brightness-125 transition-all" : "pointer-events-none")}
-                onClick={() => {
-                  if (phase === "exit-select" && onExitSelected && !isWizardSelected) onExitSelected(zoneIdentifier)
-                }}
-              />
-              {editLayer === "exits" && (
-                <rect
-                  x={zone.x + zone.width - 15} y={zone.y + zone.height - 15} width={15} height={15}
-                  fill="#10b981"
-                  className={editTool === "drag" ? "cursor-se-resize" : "pointer-events-none"}
-                />
-              )}
-            </g>
-          )
-        })}
-
-        {/* Render Tutorial Animated Path */}
-        {phase === "tutorial" && tutorialPath && tutorialPath.length > 0 && (
-          <g>
-            <path
-              d={tutorialPath.map((p, idx) => `${idx === 0 ? "M" : "L"} ${p.x} ${p.y}`).join(" ")}
-              fill="none"
-              stroke="#38bdf8"
-              strokeWidth="10"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className="pointer-events-none"
-              style={{
-                strokeDasharray: '20 15',
-                animation: 'pulse 1.5s linear infinite'
-              }}
-            />
-          </g>
-        )}
-
-        {/* Render Traced Neon Evacuation Path (Gameplay mode) */}
-        {phase === "path-draw" && drawnPath && drawnPath.length > 0 && (
-          <g>
-            <path
-              d={drawnPath.map((p, idx) => `${idx === 0 ? "M" : "L"} ${p.x} ${p.y}`).join(" ")}
-              fill="none"
-              stroke="rgba(16, 185, 129, 0.4)"
-              strokeWidth="9"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              filter="url(#neon-glow)"
-              className="pointer-events-none"
-            />
-            <path
-              d={drawnPath.map((p, idx) => `${idx === 0 ? "M" : "L"} ${p.x} ${p.y}`).join(" ")}
-              fill="none"
-              stroke="#10b981"
-              strokeWidth="3.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className="pointer-events-none animate-[pulse_1.5s_infinite]"
-            />
-          </g>
-        )}
-
-        {/* Render Nodes */}
-        {Object.keys(nodes).map(k => {
-          const n = nodes[k]
-          if (phase === "edit") {
-            if (!isVisibleInLayer(k)) return null
-
-            let fillColor = "#3b82f6" // Corridor
-            if (n.room) fillColor = "#ef4444" // Room
-            else if (n.gate) fillColor = "#10b981" // Gate
-            else if (n.target) fillColor = "#fbbf24" // Assembly
-
-            const isSelected = selectedNode === k || editingNode === k || lastTraceNode === k
-            const opacity = getNodeOpacity(k)
-
-            return (
-              <g key={k} className={editTool === "drag" ? "cursor-move" : "cursor-pointer"} opacity={opacity}>
-                <circle cx={n.x} cy={n.y} r={isSelected ? "14" : "10"} fill={fillColor} stroke="white" strokeWidth="2" />
-                {isSelected && <circle cx={n.x} cy={n.y} r="18" fill="none" stroke="white" strokeWidth="1" strokeDasharray="4 2" className="animate-[spin_4s_linear_infinite]" />}
-                <text
-                  x={n.x} y={n.y - 18}
-                  textAnchor="middle"
-                  fill="white"
-                  fontSize="16"
-                  fontWeight="bold"
-                  className="pointer-events-none drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]"
-                  stroke="black"
-                  strokeWidth="3"
-                  paintOrder="stroke fill"
-                >
-                  {k}
-                </text>
-              </g>
-            )
-          }
-
-          // Gameplay Rendering
-          if (n.target) {
-            const isTargetDest = phase === "path-draw"
-            return (
-              <g key={k} className="cursor-pointer">
-                {isTargetDest && (
-                  <circle
-                    cx={n.x}
-                    cy={n.y}
-                    r="45"
-                    fill="none"
-                    stroke="#fbbf24"
-                    strokeWidth="2"
-                    className="animate-ping"
-                    style={{ transformOrigin: `${n.x}px ${n.y}px` }}
+              {/* Render Collision Zones */}
+              {phase === "edit" && collisionZones.map(zone => (
+                <Group key={zone.id}>
+                  <Rect
+                    x={zone.x} y={zone.y} width={zone.width} height={zone.height}
+                    fill={editLayer === "blocks" ? "rgba(239, 68, 68, 0.4)" : "rgba(239, 68, 68, 0.1)"}
+                    stroke={editLayer === "blocks" ? "#ef4444" : "none"}
+                    strokeWidth={2}
+                    className={editLayer === "blocks" ? (editTool === "drag" ? "cursor-move" : "pointer-events-auto") : "pointer-events-none"}
                   />
-                )}
-                <circle cx={n.x} cy={n.y} r="32" fill="rgba(251,191,36,0.15)" />
-                <circle cx={n.x} cy={n.y} r="20" stroke="#fbbf24" strokeWidth="2" fill="none" />
-                <text x={n.x} y={n.y + 6} textAnchor="middle" fontSize="20" className="pointer-events-none">⭐</text>
-              </g>
-            )
-          }
+                  {editLayer === "blocks" && (
+                    <Rect
+                      x={zone.x + zone.width - 15} y={zone.y + zone.height - 15} width={15} height={15}
+                      fill="#ef4444"
+                      className={editTool === "drag" ? "cursor-se-resize" : "pointer-events-none"}
+                    />
+                  )}
+                </Group>
+              ))}
 
-          if (n.gate) {
-            const isBlinkingExit = phase === "exit-select" && ["G1", "G2", "G3"].includes(k) && exitZones.length === 0
-            return (
-              <g key={k} className={phase === "exit-select" && exitZones.length === 0 ? "cursor-pointer" : "pointer-events-none"}>
-                {isBlinkingExit && (
-                  <circle
-                    cx={n.x}
-                    cy={n.y}
-                    r="36"
-                    fill="none"
+              {/* Render Exit Zones */}
+              {(phase === "exit-select" || phase === "tutorial" || phase === "edit") && exitZones.map(zone => {
+                const isNearest = phase === "tutorial" && selectedExit === zone.targetNode;
+                const isAll = phase === "exit-select";
+                const shouldFlash = isNearest || isAll;
+                if (phase === "edit" && editLayer !== "exits") return null;
+
+                const zoneIdentifier = isWizard ? zone.id : zone.targetNode;
+                const wizardRank = isWizard ? wizardSelectedExits.indexOf(zone.id) : -1;
+                const isWizardSelected = wizardRank !== -1;
+                const colors = [
+                  { fill: "rgba(16, 185, 129, 0.6)", stroke: "#10b981" },
+                  { fill: "rgba(245, 158, 11, 0.6)", stroke: "#f59e0b" },
+                  { fill: "rgba(14, 165, 233, 0.6)", stroke: "#0ea5e9" }
+                ]
+                const activeColor = isWizardSelected ? (colors[wizardRank] || colors[0]) : { fill: "rgba(16, 185, 129, 0.3)", stroke: "#10b981" }
+
+                return (
+                  <Group key={zone.id}>
+                    {shouldFlash && !isWizardSelected && phase === "exit-select" && (
+                      <Html
+                        groupProps={{ x: zone.x, y: zone.y }}
+                        divProps={{ style: { pointerEvents: 'none' } }}
+                      >
+                        <div className="relative" style={{ width: zone.width, height: zone.height }}>
+                          {/* Radial Glow Behind */}
+                          <div className="absolute inset-[-20px] bg-emerald-400/50 blur-xl rounded-full animate-pulse" style={{ animationDuration: '0.8s' }} />
+                          {/* White Flash Overlay Over the icon */}
+                          <div className="absolute inset-0 bg-white/40 animate-pulse rounded" style={{ animationDuration: '0.8s' }} />
+                        </div>
+                      </Html>
+                    )}
+                    <Rect
+                      x={zone.x} y={zone.y} width={zone.width} height={zone.height}
+                      fill={editLayer === "exits" ? "rgba(16, 185, 129, 0.4)" : "transparent"}
+                      stroke={editLayer === "exits" ? "#10b981" : isWizardSelected ? activeColor.stroke : "none"}
+                      strokeWidth={isWizardSelected ? 4 : 2}
+                      onClick={() => {
+                        if (phase === "exit-select" && onExitSelected && !isWizardSelected) onExitSelected(zoneIdentifier)
+                      }}
+                      onMouseEnter={(e) => {
+                        if (phase === "exit-select" && !isWizardSelected) {
+                          const container = e.target.getStage()?.container()
+                          if (container) container.style.cursor = 'pointer'
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        if (phase === "exit-select" && !isWizardSelected) {
+                          const container = e.target.getStage()?.container()
+                          if (container) container.style.cursor = 'default'
+                        }
+                      }}
+                    />
+                    {editLayer === "exits" && (
+                      <Rect
+                        x={zone.x + zone.width - 15} y={zone.y + zone.height - 15} width={15} height={15}
+                        fill="#10b981"
+                      />
+                    )}
+                  </Group>
+                )
+              })}
+
+              {/* Render Tutorial Animated Path */}
+              {phase === "tutorial" && tutorialPath && tutorialPath.length > 0 && (() => {
+                let tutDist = 0;
+                for (let i = 0; i < tutorialPath.length - 1; i++) {
+                  tutDist += ptDist(tutorialPath[i], tutorialPath[i + 1]);
+                }
+                return (
+                  <Html divProps={{ style: { pointerEvents: 'none' } }}>
+                    <svg width={1150} height={800} style={{ position: 'absolute', top: 0, left: 0 }}>
+                      <path
+                        d={tutorialPath.map((p, idx) => `${idx === 0 ? "M" : "L"} ${p.x} ${p.y}`).join(" ")}
+                        fill="none"
+                        stroke="#d946ef"
+                        strokeWidth="12"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        className="drop-shadow-[0_0_8px_rgba(217,70,239,0.8)]"
+                        style={{
+                          strokeDasharray: tutDist,
+                          strokeDashoffset: tutDist,
+                          animation: `draw-path ${Math.max(2, tutDist / 400)}s linear infinite`
+                        }}
+                      />
+                    </svg>
+                  </Html>
+                )
+              })()}
+
+              {/* Render Traced Neon Evacuation Path (Gameplay mode) */}
+              {phase === "path-draw" && drawnPath && drawnPath.length > 0 && (
+                <Group>
+                  <Path data={drawnPath.map((p, idx) => `${idx === 0 ? "M" : "L"} ${p.x} ${p.y}`).join(" ")}
+                    fill="transparent"
+                    stroke="rgba(16, 185, 129, 0.4)"
+                    strokeWidth={9}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+
+                    listening={false}
+                  />
+                  <Path data={drawnPath.map((p, idx) => `${idx === 0 ? "M" : "L"} ${p.x} ${p.y}`).join(" ")}
+                    fill="transparent"
                     stroke="#10b981"
-                    strokeWidth="2"
-                    className="animate-ping"
-                    style={{ transformOrigin: `${n.x}px ${n.y}px` }}
+                    strokeWidth={3.5}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    listening={false}
                   />
-                )}
-                <circle cx={n.x} cy={n.y} r="24" fill={isBlinkingExit ? "rgba(16,185,129,0.3)" : "rgba(16,185,129,0.15)"} />
-                <circle cx={n.x} cy={n.y} r="15" stroke="#10b981" strokeWidth="2.5" fill="none" />
-                <text x={n.x} y={n.y + 5} textAnchor="middle" fontSize="15" className="pointer-events-none">🚪</text>
-              </g>
-            )
-          }
-          return null
-        })}
+                </Group>
+              )}
 
-        {/* SVG-based Fire indicator */}
-        {hazardNode && nodes[hazardNode] && (phase === "hazard-confirm" || phase === "exit-select" || phase === "path-draw" || phase === "evaluated") && (
-          <g className={phase === "hazard-confirm" ? "cursor-pointer" : "pointer-events-none"}>
-            {/* Outer red warning pulse */}
-            <circle
-              cx={nodes[hazardNode].x}
-              cy={nodes[hazardNode].y}
-              r="40"
-              fill="rgba(239, 68, 68, 0.25)"
-              stroke="#ef4444"
-              strokeWidth="2"
-              className={phase === "hazard-confirm" ? "animate-ping" : "animate-pulse"}
-              style={{ transformOrigin: `${nodes[hazardNode].x}px ${nodes[hazardNode].y}px` }}
-            />
-            <circle
-              cx={nodes[hazardNode].x}
-              cy={nodes[hazardNode].y}
-              r="22"
-              fill="rgba(239, 68, 68, 0.4)"
-            />
-            {/* Canvas fire effect inside SVG using foreignObject (larger size to prevent particles going outside canvas bounds) */}
-            <foreignObject
-              x={nodes[hazardNode].x - 40}
-              y={nodes[hazardNode].y - 65}
-              width="80"
-              height="80"
-            >
-              <FireEffect size={80} />
-            </foreignObject>
-          </g>
-        )}
+              {/* Render Nodes */}
+              {Object.keys(nodes).map(k => {
+                const n = nodes[k]
+                if (phase === "edit") {
+                  if (!isVisibleInLayer(k)) return null
+
+                  let fillColor = "#3b82f6" // Corridor
+                  if (n.room) fillColor = "#ef4444" // Room
+                  else if (n.gate) fillColor = "#10b981" // Gate
+                  else if (n.target) fillColor = "#fbbf24" // Assembly
+
+                  const isSelected = selectedNode === k || editingNode === k || lastTraceNode === k
+                  const opacity = getNodeOpacity(k)
+
+                  return (
+                    <Group key={k} opacity={opacity}>
+                      <Circle cx={n.x} cy={n.y} r={isSelected ? "14" : "10"} fill={fillColor} stroke="white" strokeWidth={2} />
+                      {isSelected && <Circle cx={n.x} cy={n.y} r={18} fill="transparent" stroke="white" strokeWidth={1} strokeDasharray="4 2" />}
+                      <Text x={n.x} y={n.y - 18}
+                        align="center"
+                        fill="white"
+                        fontSize={16}
+                        fontStyle="bold"
+                        listening={false}
+                        stroke="black"
+                        strokeWidth={3}
+                        text={k}
+                      />
+                    </Group>
+                  )
+                }
+
+                if (n.target) {
+                  const isTargetDest = phase === "path-draw"
+                  return (
+                    <Group key={k}>
+                      {isTargetDest && (
+                        <Circle cx={n.x}
+                          cy={n.y}
+                          r={45}
+                          fill="transparent"
+                          stroke="#fbbf24"
+                          strokeWidth={2}
+                        />
+                      )}
+                      <Circle cx={n.x} cy={n.y} r={32} fill="rgba(251,191,36,0.15)" />
+                      <Circle cx={n.x} cy={n.y} r={20} stroke="#fbbf24" strokeWidth={2} fill="transparent" />
+                      <Text x={n.x} y={n.y} offsetX={10} offsetY={10} align="center" fontSize={20} listening={false} text="⭐" />
+                    </Group>
+                  )
+                }
+
+                if (n.gate) {
+                  const isBlinkingExit = phase === "exit-select" && ["G1", "G2", "G3"].includes(k) && exitZones.length === 0
+                  return (
+                    <Group key={k} >
+                      {isBlinkingExit && (
+                        <Circle cx={n.x}
+                          cy={n.y}
+                          r={36}
+                          fill="transparent"
+                          stroke="#10b981"
+                          strokeWidth={2}
+                        />
+                      )}
+                      <Circle cx={n.x} cy={n.y} r={24} fill={isBlinkingExit ? "rgba(16,185,129,0.3)" : "rgba(16,185,129,0.15)"} />
+                      <Circle cx={n.x} cy={n.y} r={15} stroke="#10b981" strokeWidth={2.5} fill="transparent" />
+                      <Text x={n.x} y={n.y + 5} align="center" fontSize={15} listening={false} text="🚪" />
+                    </Group>
+                  )
+                }
+                return null
+              })}
+
+              {/* SVG-based Fire indicator */}
+              {hazardNode && nodes[hazardNode] && (phase === "tutorial" || phase === "hazard-confirm" || phase === "exit-select" || phase === "path-draw" || phase === "evaluated") && (
+                <Group listening={false}>
+                  {/* Outer red warning pulse */}
+                  <Circle cx={nodes[hazardNode].x}
+                    cy={nodes[hazardNode].y}
+                    r={40}
+                    fill="rgba(239, 68, 68, 0.25)"
+                    stroke="#ef4444"
+                    strokeWidth={2}
+                  />
+
+                  {/* Hazard Confirm Arrow Helper */}
+                  {phase === "hazard-confirm" && (
+                    <Html groupProps={{ x: nodes[hazardNode].x - 60, y: nodes[hazardNode].y + 35 }} divProps={{ style: { pointerEvents: 'none' } }}>
+                      <div className="flex flex-col items-center justify-center animate-bounce w-[120px]">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" className="text-slate-900 drop-shadow-md mb-1">
+                          <path d="M12 19V5M5 12l7-7 7 7" />
+                        </svg>
+                        <div className="bg-slate-900 text-white text-xs font-bold px-3 py-1.5 rounded-lg shadow-xl whitespace-nowrap border border-slate-700">
+                          Click to Confirm
+                        </div>
+                      </div>
+                    </Html>
+                  )}
+
+                  <Circle cx={nodes[hazardNode].x}
+                    cy={nodes[hazardNode].y}
+                    r={22}
+                    fill="rgba(239, 68, 68, 0.4)"
+                  />
+                  {/* Canvas fire effect inside SVG using foreignObject (larger size to prevent particles going outside canvas bounds) */}
+                  <Html
+                    groupProps={{ x: nodes[hazardNode].x - 40, y: nodes[hazardNode].y - 65 }}
+                    divProps={{ style: { pointerEvents: 'none' } }}
+                  >
+                    <div className="pointer-events-none">
+                      <FireEffect size={80} />
+                    </div>
+                  </Html>
+                </Group>
+              )}
 
 
 
-      </svg>
+            </Layer>
+          </Stage>
+        </div>
       </div>
 
       {/* Edit Mode Toolbar - Fixed Right Side */}
@@ -851,7 +901,7 @@ export function PlantMap({
           </div>
 
           <div className="p-4 flex flex-col gap-6">
-            
+
             {/* Map Layers Section */}
             <div className="space-y-2">
               <h4 className="text-[10px] font-black text-gray-500 uppercase tracking-wider">Visibility Layers</h4>
@@ -906,29 +956,29 @@ export function PlantMap({
             {/* Path Drawing Section */}
             <div className="space-y-3 bg-gray-900/50 p-3 rounded-lg border border-gray-800">
               <h4 className="text-[10px] font-black text-indigo-400 uppercase tracking-wider">Master Path Drawing</h4>
-              <button 
-                onClick={() => setEditTool("trace")} 
+              <button
+                onClick={() => setEditTool("trace")}
                 className={`w-full px-3 py-2 rounded text-xs font-bold transition-colors shadow-lg ${editTool === "trace" ? "bg-indigo-600 text-white shadow-indigo-500/20" : "bg-gray-800 text-gray-300 hover:bg-gray-700"}`}
               >
                 🟩 Draw Block Path
               </button>
-              
+
               {editTool === "trace" && (
                 <div className="space-y-3 pt-2">
                   <div className="flex justify-between items-center text-xs text-gray-400">
                     <label className="font-bold">Block Size:</label>
                     <span className="font-mono bg-black px-1 rounded">{blockSize}px</span>
                   </div>
-                  <input 
-                    type="range" 
-                    min="10" 
-                    max="50" 
+                  <input
+                    type="range"
+                    min="10"
+                    max="50"
                     step="5"
-                    value={blockSize} 
+                    value={blockSize}
                     onChange={(e) => setBlockSize(Number(e.target.value))}
                     className="w-full accent-indigo-500 cursor-pointer"
                   />
-                  <button 
+                  <button
                     onClick={() => setPathBlocks(prev => prev.length > 0 ? prev.slice(0, -1) : prev)}
                     className="w-full px-3 py-2 bg-gray-800 hover:bg-gray-700 rounded text-xs font-bold text-gray-300 transition-colors flex items-center justify-center gap-2"
                   >
@@ -988,32 +1038,7 @@ export function PlantMap({
         </div>
       )}
 
-      {/* Evaluation Panel */}
-      {phase === "evaluated" && (
-        <div className="w-80 shrink-0 bg-black/90 rounded-lg border border-gray-700 shadow-2xl flex flex-col overflow-hidden max-h-[80vh] overflow-y-auto z-50 text-white p-4">
-          <h3 className="font-bold text-lg mb-4 text-center">Path Scoring</h3>
-          <p className="text-sm text-gray-400 text-center mb-4">Run the scoring algorithm to evaluate paths based on grid block count.</p>
-          <button onClick={handleRunEvaluation} className="w-full bg-indigo-600 hover:bg-indigo-500 py-2 rounded text-sm font-bold mb-4">
-            Run Evaluation
-          </button>
-          
-          {evalHazards.length > 0 && (
-            <div className="flex flex-col gap-3">
-               {evalHazards.map((hz, i) => (
-                 <div key={hz.id} className="bg-gray-800 p-3 rounded cursor-pointer hover:bg-gray-700 transition-colors" onClick={() => setSelectedEvalPath(hz.path || [])}>
-                   <div className="flex justify-between items-center mb-1">
-                     <span className="font-bold text-sm text-amber-400">{hz.name}</span>
-                     <span className="text-xs bg-black px-2 py-1 rounded font-mono">Score: {hz.score === Infinity ? 'Unreachable' : hz.score}</span>
-                   </div>
-                   <div className="text-xs text-gray-400 font-bold">
-                     {hz.score === Infinity ? "❌ No Path found" : (i === 0 ? "🏆 Shortest Evacuation" : (i === evalHazards.length - 1 ? "⚠️ Longest Evacuation" : "Rank: " + (i + 1)))}
-                   </div>
-                 </div>
-               ))}
-            </div>
-          )}
-        </div>
-      )}
+
     </div>
   )
 }

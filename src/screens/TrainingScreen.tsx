@@ -5,21 +5,22 @@ import { useTest } from "../contexts/TestContext"
 import { LayoutShell } from "../components/shared/LayoutShell"
 import { PlantMap } from "../components/plant-map/PlantMap"
 import type { Point } from "../lib/graph"
-import { N, ROOMS, dijkstra, ptDist, DEFAULT_GRAPH } from "../lib/graph"
+import { N, ROOMS, IDEAL_ROUTES, dijkstra, ptDist, DEFAULT_GRAPH, getNearestExits, PATH_BLOCKS, EXIT_ZONES, findShortestGridPath } from "../lib/graph"
 import { Flame, DoorOpen, Route, Timer, Undo2, RotateCcw } from "lucide-react"
 import { Button } from "../components/ui/button"
 
-type Phase = "hazard-confirm" | "exit-select" | "path-draw" | "evaluated" | "edit"
+type Phase = "tutorial" | "hazard-confirm" | "exit-select" | "path-draw" | "evaluated" | "edit"
 
 export default function TrainingScreen() {
   const navigate = useNavigate()
   const { t } = useTranslation()
   const { addAttempt, testData, resetTest } = useTest()
 
-  const [phase, setPhase] = useState<Phase>("hazard-confirm")
+  const [phase, setPhase] = useState<Phase>("tutorial")
   const [hazardNode, setHazardNode] = useState<string>("")
   const [selectedExit, setSelectedExit] = useState<string>("")
   const [drawnPath, setDrawnPath] = useState<Point[]>([])
+  const [tutorialPath, setTutorialPath] = useState<Point[]>([])
   
   // Scoring / Details
   const [resultTitle, setResultTitle] = useState("")
@@ -27,6 +28,49 @@ export default function TrainingScreen() {
   const [resultScore, setResultScore] = useState(0)
   const [drawStartTime, setDrawStartTime] = useState<number>(0)
   const [elapsedTime, setElapsedTime] = useState<number>(0)
+
+  // Wizard State
+  const [isWizard, setIsWizard] = useState(false)
+  const [wizardIndex, setWizardIndex] = useState(0)
+  const [wizardExitRank, setWizardExitRank] = useState(1)
+  const [wizardRoutes, setWizardRoutes] = useState<Record<string, { exit: string, blocks: Point[] }[]>>({})
+
+  const startWizard = () => {
+    setIsWizard(true)
+
+    // Find first room not in IDEAL_ROUTES
+    let startIndex = 0;
+    for (let i = 0; i < ROOMS.length; i++) {
+      if (!IDEAL_ROUTES[ROOMS[i].nodeId]) {
+        startIndex = i;
+        break;
+      }
+    }
+    
+    if (startIndex >= ROOMS.length) {
+      alert("All routes are already mapped in IDEAL_ROUTES!")
+      setIsWizard(false)
+      return
+    }
+
+    setWizardIndex(startIndex)
+    setWizardExitRank(1)
+    setWizardRoutes({})
+    loadWizardHazard(startIndex)
+  }
+
+  const loadWizardHazard = (index: number) => {
+    if (index >= ROOMS.length) {
+      alert("Wizard Complete! All rooms have been mapped. Please click 'Export Wizard' to save your progress.")
+      setPhase("tutorial")
+      return
+    }
+    const room = ROOMS[index]
+    setHazardNode(room.nodeId)
+    setSelectedExit("")
+    setDrawnPath([])
+    setPhase("exit-select")
+  }
   
   useEffect(() => {
     resetTest()
@@ -51,7 +95,19 @@ export default function TrainingScreen() {
     setHazardNode(room.nodeId)
     setSelectedExit("")
     setDrawnPath([])
-    setPhase("hazard-confirm")
+    
+    // Tutorial Setup
+    const { dists, minD } = getNearestExits(N, DEFAULT_GRAPH.adj, room.nodeId)
+    const nearestExitKey = Object.keys(dists).find(ex => dists[ex].dist === minD && ex !== "ASSEMBLY")
+    if (nearestExitKey) {
+      const exitPathStr = dists[nearestExitKey].path
+      const assemblyPathStr = dijkstra(N, DEFAULT_GRAPH.adj, nearestExitKey, "ASSEMBLY").path
+      const fullPathStr = [...exitPathStr, ...assemblyPathStr.slice(1)]
+      setTutorialPath(fullPathStr.map(k => N[k]))
+      setSelectedExit(nearestExitKey)
+    }
+
+    setPhase("tutorial")
   }
 
   const handleHazardConfirmed = () => {
@@ -65,6 +121,33 @@ export default function TrainingScreen() {
   }
 
   const handlePathComplete = (finalPath: Point[]) => {
+    if (isWizard) {
+      setWizardRoutes(prev => {
+        const currentRoutes = prev[hazardNode] || []
+        return {
+          ...prev,
+          [hazardNode]: [...currentRoutes, { exit: selectedExit, blocks: finalPath }]
+        }
+      })
+
+      if (wizardExitRank < 3) {
+        setWizardExitRank(wizardExitRank + 1)
+        setPhase("exit-select")
+        setSelectedExit("")
+      } else {
+        // Find next room not in IDEAL_ROUTES
+        let nextIndex = wizardIndex + 1
+        while (nextIndex < ROOMS.length && IDEAL_ROUTES[ROOMS[nextIndex].nodeId]) {
+          nextIndex++
+        }
+        
+        setWizardIndex(nextIndex)
+        setWizardExitRank(1)
+        loadWizardHazard(nextIndex)
+      }
+      return
+    }
+
     const duration = Date.now() - drawStartTime
     
     // 1. Grade Exit Selection (Max 20 pts)
@@ -85,24 +168,40 @@ export default function TrainingScreen() {
     const exitScore = isNearest ? 20 : 5
 
     // 2. Grade Path Traced (Max 40 pts)
-    const { dist: shortestPathDist } = dijkstra(N, DEFAULT_GRAPH.adj, selectedExit, "ASSEMBLY")
+    const blockSize = 25
     
+    // Find optimal path blocks
+    const exitBlocks = PATH_BLOCKS.filter(b => 
+      EXIT_ZONES.some(z => b.x >= z.x && b.x <= z.x + z.width && b.y >= z.y && b.y <= z.y + z.height)
+    );
+    const hazardStartBlock = PATH_BLOCKS.reduce((closest, b) => {
+        const d = Math.sqrt((b.x - hazardPt.x) ** 2 + (b.y - hazardPt.y) ** 2);
+        return d < closest.d ? { b, d } : closest;
+    }, { b: PATH_BLOCKS[0], d: Infinity }).b;
+
+    const shortestBlocks = findShortestGridPath(PATH_BLOCKS, hazardStartBlock, exitBlocks, blockSize) || [];
+    const optimalBlockCount = shortestBlocks.length;
+    
+    // Calculate user's length in pixels
     let userPathDist = 0
     for (let i = 0; i < finalPath.length - 1; i++) {
       userPathDist += ptDist(finalPath[i], finalPath[i+1])
     }
+    
+    // Estimate user's block count based on length
+    const userBlockCount = userPathDist / blockSize;
 
-    const deviation = Math.max(0, userPathDist - shortestPathDist)
+    const deviation = Math.max(0, Math.abs(userBlockCount - optimalBlockCount))
     let pathScoreVal = 5
     let accuracy: "excellent" | "good" | "average" | "poor" = "poor"
 
-    if (deviation === 0 || deviation <= shortestPathDist * 0.05) {
+    if (deviation <= optimalBlockCount * 0.05) {
       pathScoreVal = 40
       accuracy = "excellent"
-    } else if (deviation <= shortestPathDist * 0.2) {
+    } else if (deviation <= optimalBlockCount * 0.2) {
       pathScoreVal = 30
       accuracy = "good"
-    } else if (deviation <= shortestPathDist * 0.45) {
+    } else if (deviation <= optimalBlockCount * 0.45) {
       pathScoreVal = 15
       accuracy = "average"
     } else {
@@ -181,10 +280,37 @@ export default function TrainingScreen() {
   for (let i = 0; i < drawnPath.length - 1; i++) {
     userPathDist += ptDist(drawnPath[i], drawnPath[i+1])
   }
-  const { dist: shortestPathDist } = selectedExit 
-    ? dijkstra(N, DEFAULT_GRAPH.adj, selectedExit, "ASSEMBLY") 
-    : { dist: 0 }
-  const currentDeviation = Math.max(0, userPathDist - shortestPathDist)
+  
+  // Calculate block logic for telemetry
+  const blockSize = 25
+  const exitBlocks = PATH_BLOCKS.filter(b => 
+    EXIT_ZONES.some(z => b.x >= z.x && b.x <= z.x + z.width && b.y >= z.y && b.y <= z.y + z.height)
+  );
+  const hazardStartBlock = PATH_BLOCKS.reduce((closest, b) => {
+      const hazardPt = N[hazardNode] || { x: 0, y: 0 };
+      const d = Math.sqrt((b.x - hazardPt.x) ** 2 + (b.y - hazardPt.y) ** 2);
+      return d < closest.d ? { b, d } : closest;
+  }, { b: PATH_BLOCKS[0], d: Infinity }).b;
+
+  const shortestBlocks = (selectedExit && PATH_BLOCKS.length > 0 ? findShortestGridPath(PATH_BLOCKS, hazardStartBlock, exitBlocks, blockSize) : []) || [];
+  const optimalBlockCount = shortestBlocks.length;
+  const userBlockCount = userPathDist / blockSize;
+
+  const currentDeviation = selectedExit && PATH_BLOCKS.length > 0 ? Math.max(0, Math.abs(userBlockCount - optimalBlockCount)) : 0;
+
+  const exportWizardData = () => {
+    let str = "export const IDEAL_ROUTES: Record<string, { exit: string, blocks: {x: number, y: number}[] }[]> = {\n"
+    Object.keys(wizardRoutes).forEach(k => {
+      const routesArray = wizardRoutes[k]
+      str += `  "${k}": [\n`
+      routesArray.forEach(data => {
+        str += `    { exit: "${data.exit}", blocks: ${JSON.stringify(data.blocks)} },\n`
+      })
+      str += `  ],\n`
+    })
+    str += "}"
+    navigator.clipboard.writeText(str).then(() => alert("Wizard Routes copied to clipboard!"))
+  }
 
   return (
     <LayoutShell showHeader={phase !== "edit"}>
@@ -231,15 +357,18 @@ export default function TrainingScreen() {
 
             <div>
               <h3 className="font-extrabold text-slate-800 text-sm tracking-tight">
+                {isWizard && <span className="text-indigo-600 mr-2">[WIZARD {wizardIndex + 1}/{ROOMS.length}]</span>}
+                {phase === "tutorial" && `Tutorial: ${ROOMS.find(r => r.nodeId === hazardNode)?.name || "Emergency"}`}
                 {phase === "hazard-confirm" && t("step1Title")}
-                {phase === "exit-select" && t("step2Title")}
+                {phase === "exit-select" && (isWizard ? `Select Rank ${wizardExitRank} Nearest Exit` : t("step2Title"))}
                 {phase === "path-draw" && t("step3Title")}
                 {phase === "evaluated" && t("evaluatedTitle")}
                 {phase === "edit" && "Map Editor Node Placement Mode"}
               </h3>
               <p className="text-xs text-slate-500 font-semibold mt-0.5">
+                {phase === "tutorial" && "Observe the shortest evacuation route."}
                 {phase === "hazard-confirm" && t("step1Desc")}
-                {phase === "exit-select" && t("step2Desc")}
+                {phase === "exit-select" && (isWizard ? `Click on the gate that is the ${wizardExitRank} nearest to the hazard.` : t("step2Desc"))}
                 {phase === "path-draw" && t("step3Desc")}
                 {phase === "evaluated" && t("evaluatedDesc")}
               </p>
@@ -247,6 +376,16 @@ export default function TrainingScreen() {
           </div>
 
           <div className="flex items-center justify-between xl:justify-end gap-2.5 shrink-0 flex-wrap">
+            {phase === "tutorial" && (
+              <Button
+                variant="default"
+                size="sm"
+                onClick={() => setPhase("hazard-confirm")}
+                className="h-8 px-4 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-xs flex items-center shadow-md shadow-indigo-600/20"
+              >
+                Start Practice 🚀
+              </Button>
+            )}
             {phase === "path-draw" && (
               <>
                 <div className="flex items-center gap-2 bg-slate-900 text-slate-200 px-3 py-1.5 rounded-xl font-mono text-xs font-bold shadow-inner">
@@ -270,6 +409,18 @@ export default function TrainingScreen() {
                 >
                   <RotateCcw className="h-3.5 w-3.5" /> <span className="hidden md:inline">{t("clearTracing")}</span>
                 </Button>
+                {isWizard && (
+                  <Button
+                    variant="default"
+                    size="sm"
+                    onClick={() => handlePathComplete(drawnPath)}
+                    disabled={drawnPath.length === 0}
+                    className="h-8 px-4 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-xs flex items-center shadow-md shadow-indigo-600/20"
+                  >
+                    Save Route & Next
+                  </Button>
+                )}
+
               </>
             )}
             
@@ -284,12 +435,45 @@ export default function TrainingScreen() {
             </div>
 
             {import.meta.env.DEV && (
-              <button
-                onClick={() => setPhase(phase === "edit" ? "hazard-confirm" : "edit")}
-                className="rounded-xl border border-slate-300 hover:bg-slate-100 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 cursor-pointer transition-colors"
-              >
-                {phase === "edit" ? t("exitEdit") : t("editMap")}
-              </button>
+              <>
+                {!isWizard ? (
+                  <button
+                    onClick={startWizard}
+                    className="rounded-xl border border-indigo-300 bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 text-xs font-bold text-indigo-700 cursor-pointer transition-colors"
+                  >
+                    Start Wizard
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      onClick={() => {
+                        let nextIndex = wizardIndex + 1
+                        while (nextIndex < ROOMS.length && IDEAL_ROUTES[ROOMS[nextIndex].nodeId]) {
+                          nextIndex++
+                        }
+                        setWizardIndex(nextIndex)
+                        setWizardExitRank(1)
+                        loadWizardHazard(nextIndex)
+                      }}
+                      className="rounded-xl border border-gray-300 bg-gray-50 hover:bg-gray-100 px-3 py-1.5 text-xs font-bold text-gray-700 cursor-pointer transition-colors"
+                    >
+                      Skip to Next Room
+                    </button>
+                    <button
+                      onClick={exportWizardData}
+                      className="rounded-xl border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 px-3 py-1.5 text-xs font-bold text-emerald-700 cursor-pointer transition-colors"
+                    >
+                      Export Wizard
+                    </button>
+                  </>
+                )}
+                <button
+                  onClick={() => setPhase(phase === "edit" ? "hazard-confirm" : "edit")}
+                  className="rounded-xl border border-slate-300 hover:bg-slate-100 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 cursor-pointer transition-colors"
+                >
+                  {phase === "edit" ? t("exitEdit") : t("editMap")}
+                </button>
+              </>
             )}
           </div>
         </div>
@@ -302,9 +486,13 @@ export default function TrainingScreen() {
             selectedExit={selectedExit}
             drawnPath={drawnPath}
             setDrawnPath={setDrawnPath}
+            tutorialPath={tutorialPath}
             onHazardConfirmed={handleHazardConfirmed}
             onExitSelected={handleExitSelected}
             onPathComplete={handlePathComplete}
+            isWizard={isWizard}
+            wizardDrawnPaths={wizardRoutes[hazardNode] ? wizardRoutes[hazardNode].map(r => r.blocks) : []}
+            wizardSelectedExits={wizardRoutes[hazardNode] ? wizardRoutes[hazardNode].map(r => r.exit) : []}
           />
 
           {/* Real-time Route Telemetry HUD Overlay */}
@@ -320,8 +508,8 @@ export default function TrainingScreen() {
                 </div>
                 <div className="flex justify-between gap-2">
                   <span>Deviation:</span>
-                  <span className={`font-bold ${currentDeviation > shortestPathDist * 0.25 ? 'text-amber-400' : 'text-emerald-400'}`}>
-                    {Math.round(currentDeviation)}px
+                  <span className={`font-bold ${currentDeviation > optimalBlockCount * 0.25 ? 'text-amber-400' : 'text-emerald-400'}`}>
+                    {Math.round(currentDeviation)} blocks
                   </span>
                 </div>
               </div>

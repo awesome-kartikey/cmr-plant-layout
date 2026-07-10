@@ -10,7 +10,11 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'cmr-logo.png'],
+      includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'cmr-logo.png', 'map/cmr-emergency-plan-main.jpg'],
+      workbox: {
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,jpg}'],
+        maximumFileSizeToCacheInBytes: 20000000
+      },
       manifest: {
         name: 'CMR Plant Layout Training',
         short_name: 'CMR Training',

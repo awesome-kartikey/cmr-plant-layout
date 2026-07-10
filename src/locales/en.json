@@ -114,7 +114,7 @@
   "step1Title": "Step 1: Identify Hazard",
   "step1Desc": "Tap the fire to acknowledge location",
   "step2Title": "Step 2: Choose Exit Gate",
-  "step2Desc": "Select the closest exit gate (G1, G2, G3)",
+  "step2Desc": "Choose the nearest exit gate.",
   "step3Title": "Step 3: Trace Evacuation Path",
   "step3Desc": "Draw path along corridors to the Assembly Area (⭐)",
   "evaluatedTitle": "Assessment Evaluated",

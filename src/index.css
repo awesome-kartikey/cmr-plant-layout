@@ -123,3 +123,43 @@
     font-family: system-ui, -apple-system, sans-serif;
   }
 }
+
+@keyframes multicolour-pulse {
+  0%, 100% { 
+    opacity: 1;
+    border-color: #34d399; 
+    box-shadow: 0 0 25px rgba(52, 211, 153, 0.8); 
+  }
+  25% { 
+    opacity: 0.5;
+    border-color: #38bdf8; 
+    box-shadow: 0 0 25px rgba(56, 189, 248, 0.3); 
+  }
+  50% { 
+    opacity: 1;
+    border-color: #c084fc; 
+    box-shadow: 0 0 25px rgba(192, 132, 252, 0.8); 
+  }
+  75% { 
+    opacity: 0.5;
+    border-color: #fb7185; 
+    box-shadow: 0 0 25px rgba(251, 113, 133, 0.3); 
+  }
+}
+
+.animate-multicolour-pulse {
+  animation: multicolour-pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes draw-path {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.animate-draw-path {
+  stroke-dasharray: 1000;
+  stroke-dashoffset: 1000;
+  animation: draw-path 3s linear infinite;
+}
+
