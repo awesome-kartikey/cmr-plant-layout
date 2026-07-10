@@ -43,6 +43,7 @@ export default function HomeScreen() {
   const [results, setResults] = useState<ResultItem[]>([])
   const [filtered, setFiltered] = useState<ResultItem[]>([])
   const [search, setSearch] = useState("")
+  const [sortOrder, setSortOrder] = useState<"desc" | "asc">("desc")
   const [loading, setLoading] = useState(true)
   const [selectedResult, setSelectedResult] = useState<ResultItem | null>(null)
 
@@ -77,14 +78,22 @@ export default function HomeScreen() {
   }, [fetchData])
 
   useEffect(() => {
-    if (!search.trim()) { setFiltered(results); return }
-    const q = search.toLowerCase()
-    setFiltered(results.filter((r) => {
-      const name = (r.employeeDetails?.name || "").toLowerCase()
-      const code = (r.employeeDetails?.employeeCode || "").toLowerCase()
-      return name.includes(q) || code.includes(q)
-    }))
-  }, [search, results])
+    let list = [...results]
+    if (search.trim()) {
+      const q = search.toLowerCase()
+      list = list.filter((r) => {
+        const name = (r.employeeDetails?.name || "").toLowerCase()
+        const code = (r.employeeDetails?.employeeCode || "").toLowerCase()
+        return name.includes(q) || code.includes(q)
+      })
+    }
+    list.sort((a, b) => {
+      const dateA = a.createdAt ? a.createdAt.toDate().getTime() : 0;
+      const dateB = b.createdAt ? b.createdAt.toDate().getTime() : 0;
+      return sortOrder === "desc" ? dateB - dateA : dateA - dateB;
+    });
+    setFiltered(list)
+  }, [search, results, sortOrder])
 
   useEffect(() => {
     if (!user) {
@@ -262,14 +271,24 @@ export default function HomeScreen() {
                 Download CSV
               </Button>
             </div>
-            <div className="relative w-full sm:max-w-xs">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-              <Input
-                placeholder={t("searchPlaceholder")}
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="pl-9 bg-white border-slate-200"
-              />
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <select 
+                className="bg-white border border-slate-200 text-slate-600 rounded-md text-sm px-3 py-2 outline-none h-10 font-medium cursor-pointer hover:border-indigo-200 transition-colors"
+                value={sortOrder}
+                onChange={(e) => setSortOrder(e.target.value as "desc" | "asc")}
+              >
+                <option value="desc">{t("sortNewest")}</option>
+                <option value="asc">{t("sortOldest")}</option>
+              </select>
+              <div className="relative w-full sm:max-w-xs flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                <Input
+                  placeholder={t("searchPlaceholder")}
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="pl-9 bg-white border-slate-200 h-10"
+                />
+              </div>
             </div>
           </div>
 
