@@ -12,10 +12,12 @@ import { Badge } from "../components/ui/badge"
 import { Separator } from "../components/ui/separator"
 import { toast } from "sonner"
 import { generateCertificate, shareCertificate } from "../lib/certificate"
-import { Trophy, FileDown, CheckCircle, RotateCcw, Home, Calendar, Timer, MoveRight } from "lucide-react"
+import { Trophy, FileDown, CheckCircle, RotateCcw, Home, Calendar, Timer, MoveRight, Flame, Target, Zap, AlertTriangle } from "lucide-react"
+import { N } from "../lib/graph"
 
-function getGradeLabel(score: number) {
-  const percentage = Math.round((score / 300) * 100)
+function getGradeLabel(score: number, maxScore: number) {
+  if (maxScore === 0) maxScore = 300;
+  const percentage = Math.round((score / maxScore) * 100)
   if (percentage >= 90) return { label: "Outstanding (Level 1)", color: "text-emerald-600 bg-emerald-50 border-emerald-200" }
   if (percentage >= 75) return { label: "Excellent (Level 2)", color: "text-green-600 bg-green-50 border-green-200" }
   if (percentage >= 60) return { label: "Very Good (Level 3)", color: "text-sky-600 bg-sky-50 border-sky-200" }
@@ -40,9 +42,34 @@ export default function ResultScreen() {
   const [saved, setSaved] = useState(false)
 
   const initials = (employeeData.name || "NA").substring(0, 2).toUpperCase()
-  const grade = getGradeLabel(testData.score)
-  const percentage = Math.min(100, Math.max(0, Math.round((testData.score / 300) * 100)))
+  const maxScore = testData.attempts.length > 0 ? testData.attempts.length * 100 : 300
+  const grade = getGradeLabel(testData.score, maxScore)
+  const percentage = Math.min(100, Math.max(0, Math.round((testData.score / maxScore) * 100)))
   
+  // Calculate Strengths & Weaknesses
+  let strength = { icon: Target, label: "Good Attempt", desc: "Keep practicing!" }
+  let weakness = { icon: AlertTriangle, label: "Path Trace Accuracy", desc: "Trace paths more carefully." }
+  
+  if (testData.attempts.length > 0) {
+    const perfectExits = testData.attempts.filter(a => a.points >= 20 || (a.selectedExit === a.nearestExit)).length
+    const avgDeviation = testData.attempts.reduce((sum, a) => sum + (a.pathScore?.deviation || 0), 0) / testData.attempts.length
+    const avgTime = testData.attempts.reduce((sum, a) => sum + (a.pathScore?.time || 0), 0) / testData.attempts.length
+
+    if (perfectExits === testData.attempts.length) {
+      strength = { icon: CheckCircle, label: "Flawless Gate Selection", desc: "Always selected the safest and nearest evacuation gate." }
+    } else if (avgTime < 5000) {
+      strength = { icon: Zap, label: "Fast Decision Making", desc: "You react very quickly to emergency scenarios." }
+    }
+
+    if (perfectExits < testData.attempts.length) {
+      weakness = { icon: AlertTriangle, label: "Suboptimal Gate Choices", desc: "Sometimes missed the absolutely nearest exit gate." }
+    } else if (avgDeviation > 10) {
+      weakness = { icon: MoveRight, label: "Path Trace Accuracy", desc: "Your drawn evacuation routes could be more precise." }
+    } else {
+      weakness = { icon: Trophy, label: "No Major Weaknesses", desc: "Outstanding performance across all metrics." }
+    }
+  }
+
   // Radial Progress math: radius 60, circ = 377
   const strokeDashoffset = 377 - (377 * percentage) / 100
 
@@ -52,7 +79,7 @@ export default function ResultScreen() {
 
     try {
       if (!employeeData.employeeCode) {
-        toast.error("Missing employee data")
+        toast.error("Missing employee ID. Please restart from the Employee Form if you refreshed the page.")
         setIsSaving(false)
         return
       }
@@ -107,7 +134,7 @@ export default function ResultScreen() {
 
   return (
     <LayoutShell>
-      <div className="max-w-3xl mx-auto space-y-6 animate-in fade-in duration-500 pb-12 select-none">
+      <div className="max-w-3xl mx-auto space-y-6 animate-in fade-in duration-500 pb-40 select-none">
         
         {/* Profile Card */}
         <Card className="border-slate-100 shadow-sm">
@@ -128,7 +155,7 @@ export default function ResultScreen() {
               <p className="text-xs text-slate-500 font-semibold">{t("idPrefix", { id: employeeData.employeeCode || "N/A" })}</p>
               <p className="text-[10px] text-slate-400 flex items-center gap-1 font-medium">
                 <Calendar className="h-3.5 w-3.5" />
-                {t("testDate")}: {new Date(employeeData.testDate).toLocaleDateString()}
+                {t("testDate")}: {new Date(employeeData.testDate).toLocaleDateString("en-GB", { day: 'numeric', month: 'long', year: 'numeric' })}
               </p>
             </div>
           </CardContent>
@@ -166,7 +193,7 @@ export default function ResultScreen() {
               </svg>
               <div className="absolute flex flex-col items-center justify-center">
                 <span className="text-4xl font-black text-slate-800">{testData.score}</span>
-                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">/ 300 pts</span>
+                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">/ {maxScore} pts</span>
               </div>
             </div>
 
@@ -179,8 +206,29 @@ export default function ResultScreen() {
                 </div>
               </div>
               <p className="text-xs text-slate-500 font-medium leading-relaxed max-w-sm">
-                This report verifies that the employee completed emergency exit planning assessments in {testData.attempts.length} attempts. Grading depends on Dijkstra optimal-path calculations and evacuation gate choices.
+                This report verifies that the employee completed emergency exit planning assessments in {testData.attempts.length} attempts. Grading depends on optimal-path calculations and evacuation gate choices.
               </p>
+
+              {testData.attempts.length > 0 && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4 pt-4 border-t border-slate-100">
+                  <div className="bg-emerald-50 rounded-xl p-3 border border-emerald-100">
+                    <div className="flex items-center gap-2 mb-1">
+                      <strength.icon className="h-4 w-4 text-emerald-600" />
+                      <span className="text-xs font-bold text-emerald-800">Top Strength</span>
+                    </div>
+                    <p className="text-xs font-semibold text-emerald-700">{strength.label}</p>
+                    <p className="text-[10px] text-emerald-600/80 mt-0.5">{strength.desc}</p>
+                  </div>
+                  <div className="bg-amber-50 rounded-xl p-3 border border-amber-100">
+                    <div className="flex items-center gap-2 mb-1">
+                      <weakness.icon className="h-4 w-4 text-amber-600" />
+                      <span className="text-xs font-bold text-amber-800">Area for Growth</span>
+                    </div>
+                    <p className="text-xs font-semibold text-amber-700">{weakness.label}</p>
+                    <p className="text-[10px] text-amber-600/80 mt-0.5">{weakness.desc}</p>
+                  </div>
+                </div>
+              )}
             </div>
 
           </CardContent>
@@ -203,36 +251,16 @@ export default function ResultScreen() {
                       <Separator className="my-3 opacity-50" />
                       <div className="grid grid-cols-2 gap-4 text-xs">
                         <div className="space-y-1">
-                          <p className="text-slate-400">Exit Selected</p>
+                          <p className="text-slate-400">Hazard Location</p>
                           <p className="font-bold text-slate-700 flex items-center gap-1.5 capitalize">
-                            {attempt.hazard} <MoveRight className="h-3 w-3 text-slate-400" /> {attempt.selectedExit}
+                            <Flame className="h-4 w-4 text-orange-500 shrink-0" />
+                            {N[attempt.hazard]?.name || attempt.hazard}
                           </p>
                         </div>
                         <div className="space-y-1">
-                          <p className="text-slate-400">Exit Evaluation</p>
-                          <p className="font-bold text-slate-700 capitalize">{attempt.nearestExit}</p>
+                          <p className="text-slate-400">Selected Gate</p>
+                          <p className="font-bold text-slate-700 capitalize">{attempt.selectedExit}</p>
                         </div>
-                        {attempt.pathScore && (
-                          <>
-                            <div className="space-y-1">
-                              <p className="text-slate-400">Path Quality</p>
-                              <Badge className={`px-2 py-0.5 text-[10px] font-bold border ${acc.color}`}>
-                                {acc.label}
-                              </Badge>
-                            </div>
-                            <div className="space-y-1">
-                              <p className="text-slate-400">Trace Deviation</p>
-                              <p className="font-bold text-slate-700">{Math.round(attempt.pathScore.deviation)}px</p>
-                            </div>
-                            <div className="space-y-1">
-                              <p className="text-slate-400">Drawing Timer</p>
-                              <p className="font-bold text-slate-700 flex items-center gap-1">
-                                <Timer className="h-3.5 w-3.5 text-slate-400" />
-                                {(attempt.pathScore.time / 1000).toFixed(1)}s
-                              </p>
-                            </div>
-                          </>
-                        )}
                       </div>
                     </div>
                   )
@@ -242,27 +270,29 @@ export default function ResultScreen() {
           </Card>
         )}
 
-        {/* Action Controls */}
-        <div className="flex flex-col gap-3">
-          <Button className="w-full bg-indigo-600 hover:bg-indigo-500 text-white cursor-pointer py-6 rounded-xl font-bold flex items-center justify-center gap-2" onClick={saveResult} disabled={isSaving || saved}>
-            <CheckCircle className="h-5 w-5" />
-            {isSaving ? t("saving") : saved ? t("saved") : t("saveButton")}
-          </Button>
-
-          <Button className="w-full bg-white hover:bg-slate-50 border-slate-200 text-slate-700 cursor-pointer py-6 rounded-xl font-bold flex items-center justify-center gap-2 shadow-sm" variant="secondary" onClick={handleDownloadCertificate}>
-            <FileDown className="h-5 w-5 text-indigo-600" />
-            Download Evacuation Certificate
-          </Button>
-
-          <div className="flex gap-4">
-            <Button className="flex-1 border-slate-200 text-slate-700 hover:bg-slate-50 hover:text-slate-900 cursor-pointer py-5 rounded-xl font-bold flex items-center justify-center gap-1.5" variant="outline" onClick={handleHome}>
-              <Home className="h-4 w-4" />
-              {t("home")}
+        {/* Sticky Action Controls */}
+        <div className="fixed bottom-0 left-0 w-full bg-white/80 backdrop-blur-md border-t border-slate-200 p-4 shadow-[0_-10px_40px_-10px_rgba(0,0,0,0.1)] z-50">
+          <div className="max-w-3xl mx-auto flex flex-col sm:flex-row gap-3">
+            <Button className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white cursor-pointer py-6 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/20 transition-transform hover:-translate-y-0.5" onClick={saveResult} disabled={isSaving || saved}>
+              <CheckCircle className="h-5 w-5" />
+              {isSaving ? t("saving") : saved ? t("saved") : t("saveButton")}
             </Button>
-            <Button className="flex-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 cursor-pointer py-5 rounded-xl font-bold flex items-center justify-center gap-1.5" onClick={handlePlayAgain}>
-              <RotateCcw className="h-4 w-4" />
-              {t("playAgain")}
+
+            <Button className="flex-1 bg-white hover:bg-slate-50 border-slate-200 text-slate-700 cursor-pointer py-6 rounded-xl font-bold flex items-center justify-center gap-2 shadow-sm transition-transform hover:-translate-y-0.5" variant="secondary" onClick={handleDownloadCertificate}>
+              <FileDown className="h-5 w-5 text-indigo-600" />
+              Certificate
             </Button>
+
+            <div className="flex flex-1 gap-3">
+              <Button className="flex-1 border-slate-200 text-slate-700 hover:bg-slate-50 hover:text-slate-900 cursor-pointer py-6 rounded-xl font-bold flex items-center justify-center gap-1.5 transition-transform hover:-translate-y-0.5" variant="outline" onClick={handleHome}>
+                <Home className="h-4 w-4" />
+                {t("home")}
+              </Button>
+              <Button className="flex-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 cursor-pointer py-6 rounded-xl font-bold flex items-center justify-center gap-1.5 transition-transform hover:-translate-y-0.5" onClick={handlePlayAgain}>
+                <RotateCcw className="h-4 w-4" />
+                Retry
+              </Button>
+            </div>
           </div>
         </div>
       </div>

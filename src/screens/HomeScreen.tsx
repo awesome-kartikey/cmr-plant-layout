@@ -11,7 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../co
 import { Badge } from "../components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "../components/ui/dialog"
 import { generateCertificate, shareCertificate } from "../lib/certificate"
-import { Users, Award, ShieldAlert, CheckCircle2, ChevronRight, FileDown, Search, ArrowRight, Activity, Calendar } from "lucide-react"
+import { Users, Award, ShieldAlert, CheckCircle2, ChevronRight, FileDown, Search, ArrowRight, Activity, Calendar, Download } from "lucide-react"
 
 interface AttemptDetail {
   hazard: string
@@ -110,18 +110,67 @@ export default function HomeScreen() {
     shareCertificate(docPdf, `certificate-${item.employeeDetails.employeeCode}.pdf`)
   }
 
+  const handleDownloadCSV = async () => {
+    if (results.length === 0) return
+
+    const headers = ["Name", "Employee ID", "Date", "Score", "Max Score", "Percentage"]
+    const rows = results.map(item => {
+      const max = Math.max(100, (item.attempts?.length || 3) * 100)
+      const score = item.score ?? 0
+      const percentage = Math.min(100, Math.max(0, Math.round((score / max) * 100)))
+      const date = item.createdAt ? new Date(item.createdAt.toDate()).toLocaleDateString("en-GB", { day: 'numeric', month: 'short', year: 'numeric' }) : ""
+      return `"${item.employeeDetails?.name || "NA"}","${item.employeeDetails?.employeeCode || "NA"}","${date}",${score},${max},"${percentage}%"`
+    })
+
+    const csvContent = [headers.join(","), ...rows].join("\n")
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" })
+    
+    // Check if Web Share API is available and can share files
+    if (navigator.share && navigator.canShare) {
+      const file = new File([blob], "plant_layout_results.csv", { type: "text/csv" })
+      try {
+        if (navigator.canShare({ files: [file] })) {
+          await navigator.share({
+            title: 'Plant Layout Assessment Results',
+            files: [file]
+          })
+          return
+        }
+      } catch (err) {
+        console.error("Share failed", err)
+      }
+    }
+    
+    // Fallback for desktop/unsupported browsers
+    const link = document.createElement("a")
+    const url = URL.createObjectURL(blob)
+    link.setAttribute("href", url)
+    link.setAttribute("download", "plant_layout_results.csv")
+    link.style.visibility = "hidden"
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+  }
+
   if (!user) return null
 
-  // Calculate statistics
+  // Calculate statistics using percentages
   const totalTrainees = results.length
+  
+  const resultStats = results.map(r => {
+    const max = Math.max(100, (r.attempts?.length || 3) * 100)
+    const pct = Math.min(100, Math.max(0, Math.round(((r.score ?? 0) / max) * 100)))
+    return pct
+  })
+
   const averageScore = totalTrainees > 0 
-    ? Math.round(results.reduce((acc, r) => acc + (r.score ?? 0), 0) / totalTrainees) 
+    ? Math.round(resultStats.reduce((acc, pct) => acc + pct, 0) / totalTrainees) 
     : 0
   const passRate = totalTrainees > 0
-    ? Math.round((results.filter(r => (r.score ?? 0) >= 180).length / totalTrainees) * 100)
+    ? Math.round((resultStats.filter(pct => pct >= 60).length / totalTrainees) * 100)
     : 0
   const highestScore = results.length > 0
-    ? Math.max(...results.map(r => r.score ?? 0))
+    ? Math.max(...resultStats)
     : 0
 
   return (
@@ -146,7 +195,7 @@ export default function HomeScreen() {
             <CardContent className="p-4 flex items-center justify-between">
               <div>
                 <p className="text-xs font-semibold text-emerald-600/80 uppercase tracking-wider">{t("avgScore")}</p>
-                <h3 className="text-2xl font-bold text-emerald-900 mt-1">{averageScore} <span className="text-xs font-normal text-emerald-700/70">/ 300</span></h3>
+                <h3 className="text-2xl font-bold text-emerald-900 mt-1">{averageScore}%</h3>
               </div>
               <div className="rounded-lg bg-emerald-500/10 p-2.5 text-emerald-600">
                 <Award className="h-5 w-5" />
@@ -170,7 +219,7 @@ export default function HomeScreen() {
             <CardContent className="p-4 flex items-center justify-between">
               <div>
                 <p className="text-xs font-semibold text-purple-600/80 uppercase tracking-wider">{t("highScore")}</p>
-                <h3 className="text-2xl font-bold text-purple-900 mt-1">{highestScore} <span className="text-xs font-normal text-purple-700/70">/ 300</span></h3>
+                <h3 className="text-2xl font-bold text-purple-900 mt-1">{highestScore}%</h3>
               </div>
               <div className="rounded-lg bg-purple-500/10 p-2.5 text-purple-600">
                 <Activity className="h-5 w-5" />
@@ -201,12 +250,18 @@ export default function HomeScreen() {
         {/* Results list Section */}
         <div className="space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-              <span>{t("employeeTestResults")}</span>
-              <span className="bg-slate-100 text-slate-600 text-xs px-2 py-0.5 rounded-full font-semibold">
-                {filtered.length}
-              </span>
-            </h2>
+            <div className="flex items-center gap-4">
+              <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                <span>{t("employeeTestResults")}</span>
+                <span className="bg-slate-100 text-slate-600 text-xs px-2 py-0.5 rounded-full font-semibold">
+                  {filtered.length}
+                </span>
+              </h2>
+              <Button onClick={handleDownloadCSV} variant="outline" size="sm" className="hidden sm:flex gap-1.5 h-8 border-slate-200 text-slate-600 hover:bg-slate-50 cursor-pointer">
+                <Download className="h-3.5 w-3.5" />
+                Download CSV
+              </Button>
+            </div>
             <div className="relative w-full sm:max-w-xs">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
               <Input
@@ -225,7 +280,11 @@ export default function HomeScreen() {
           ) : filtered.length > 0 ? (
             <div className="grid gap-3">
               {filtered.map((item) => {
-                const isPassed = (item.score ?? 0) >= 180
+                const max = Math.max(100, (item.attempts?.length || 3) * 100)
+                const score = item.score ?? 0
+                const pct = Math.min(100, Math.max(0, Math.round((score / max) * 100)))
+                const isPassed = pct >= 60
+
                 return (
                   <div 
                     key={item.id} 
@@ -257,11 +316,13 @@ export default function HomeScreen() {
                     <div className="flex items-center gap-4">
                       <div className="text-right">
                         <span className={`text-lg font-extrabold ${isPassed ? 'text-emerald-600' : 'text-red-500'}`}>
-                          {item.score ?? 0}
+                          {pct}%
                         </span>
-                        <span className="text-xs text-slate-400"> / 300</span>
+                        <p className="text-[10px] text-slate-400 font-semibold mb-0.5">
+                          {score} / {max} pts
+                        </p>
                         <p className="text-[10px] text-slate-400/80">
-                          {item.createdAt ? new Date(item.createdAt.toDate()).toLocaleDateString() : ""}
+                          {item.createdAt ? new Date(item.createdAt.toDate()).toLocaleDateString("en-GB", { day: 'numeric', month: 'long', year: 'numeric' }) : ""}
                         </p>
                       </div>
                       <ChevronRight className="h-5 w-5 text-slate-300 group-hover:text-indigo-400 transition-all duration-300 group-hover:translate-x-0.5" />

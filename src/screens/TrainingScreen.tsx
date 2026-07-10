@@ -1,33 +1,53 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useNavigate } from "react-router-dom"
 import { useTranslation } from "react-i18next"
 import { useTest } from "../contexts/TestContext"
 import { LayoutShell } from "../components/shared/LayoutShell"
-import { PlantMap } from "../components/plant-map/PlantMap"
+import { PlantMapKonva } from "../components/plant-map/PlantMapKonva"
 import type { Point } from "../lib/graph"
 import { N, ROOMS, IDEAL_ROUTES, dijkstra, ptDist, DEFAULT_GRAPH, getNearestExits, PATH_BLOCKS, EXIT_ZONES, findShortestGridPath } from "../lib/graph"
-import { Flame, DoorOpen, Route, Timer, Undo2, RotateCcw } from "lucide-react"
+import { Flame, DoorOpen, Route, Timer, Undo2, RotateCcw, Zap, ChevronRight, BookOpen, ClipboardCheck, Trophy, AlertTriangle, CheckCircle2, XCircle, Crosshair } from "lucide-react"
 import { Button } from "../components/ui/button"
 
-type Phase = "tutorial" | "hazard-confirm" | "exit-select" | "path-draw" | "evaluated" | "edit"
+type Phase = "idle" | "tutorial" | "hazard-confirm" | "exit-select" | "path-draw" | "evaluated" | "edit"
+
+// --- Phase Config for dynamic banner ---
+const PHASE_CONFIG = {
+  idle: { step: 0, color: "slate", icon: null, label: "" },
+  tutorial: { step: 1, color: "sky", icon: BookOpen, label: "Tutorial" },
+  "hazard-confirm": { step: 1, color: "red", icon: Flame, label: "Step 1: Identify Hazard" },
+  "exit-select": { step: 2, color: "emerald", icon: DoorOpen, label: "Step 2: Choose Exit Gate" },
+  "path-draw": { step: 3, color: "sky", icon: Route, label: "Step 3: Trace Evacuation Path" },
+  evaluated: { step: 3, color: "indigo", icon: ClipboardCheck, label: "Assessment Evaluated" },
+  edit: { step: 0, color: "orange", icon: Crosshair, label: "Map Editor" },
+}
 
 export default function TrainingScreen() {
   const navigate = useNavigate()
   const { t } = useTranslation()
   const { addAttempt, testData, resetTest } = useTest()
 
-  const [phase, setPhase] = useState<Phase>("tutorial")
+  const [phase, setPhase] = useState<Phase>("idle")
+  const [gameMode, setGameMode] = useState<"idle" | "practice" | "exam">("idle")
   const [hazardNode, setHazardNode] = useState<string>("")
   const [selectedExit, setSelectedExit] = useState<string>("")
   const [drawnPath, setDrawnPath] = useState<Point[]>([])
+  const [hasStartedDrawing, setHasStartedDrawing] = useState(false)
   const [tutorialPath, setTutorialPath] = useState<Point[]>([])
   
   // Scoring / Details
   const [resultTitle, setResultTitle] = useState("")
   const [resultMsg, setResultMsg] = useState("")
   const [resultScore, setResultScore] = useState(0)
+  const [resultBreakdown, setResultBreakdown] = useState<{ exit: number; path: number; speed: number } | null>(null)
   const [drawStartTime, setDrawStartTime] = useState<number>(0)
   const [elapsedTime, setElapsedTime] = useState<number>(0)
+
+  // Tutorial animation loop state
+  const [showAssemblyReached, setShowAssemblyReached] = useState(false)
+  const [showTutorialPath, setShowTutorialPath] = useState(true)
+  const [tutorialKey, setTutorialKey] = useState(0)
+  const tutorialLoopRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Wizard State
   const [isWizard, setIsWizard] = useState(false)
@@ -38,7 +58,6 @@ export default function TrainingScreen() {
   const startWizard = () => {
     setIsWizard(true)
 
-    // Find first room not in IDEAL_ROUTES
     let startIndex = 0;
     for (let i = 0; i < ROOMS.length; i++) {
       if (!IDEAL_ROUTES[ROOMS[i].nodeId]) {
@@ -74,40 +93,104 @@ export default function TrainingScreen() {
   
   useEffect(() => {
     resetTest()
-    pickNewHazard()
+    pickNewHazard("practice")
   }, [])
+
+  // Tutorial animation loop: after path animates to assembly, show toast for 2.5s, hide, repeat
+  useEffect(() => {
+    if (phase !== "tutorial" || tutorialPath.length === 0) {
+      setShowAssemblyReached(false)
+      setShowTutorialPath(true)
+      if (tutorialLoopRef.current) clearTimeout(tutorialLoopRef.current)
+      return
+    }
+    let tutDist = 0
+    for (let i = 0; i < tutorialPath.length - 1; i++) {
+      tutDist += ptDist(tutorialPath[i], tutorialPath[i + 1])
+    }
+    const animMs = Math.max(2000, (tutDist / 400) * 1000)
+    const toastMs = 2800
+    const hideMs = 800
+
+    const runLoop = () => {
+      // 1. Path animates, toast & pulse hidden
+      setShowTutorialPath(true)
+      setShowAssemblyReached(false)
+      setTutorialKey(k => k + 1)
+
+      // 2. Once path reaches the end, hold path, show toast + pulse
+      tutorialLoopRef.current = setTimeout(() => {
+        setShowAssemblyReached(true)
+
+        // 3. Keep showing everything, then hide all at once
+        tutorialLoopRef.current = setTimeout(() => {
+          setShowTutorialPath(false)
+          setShowAssemblyReached(false)
+
+          // 4. Stay hidden for hideMs, then restart loop
+          tutorialLoopRef.current = setTimeout(() => {
+            runLoop()
+          }, hideMs)
+
+        }, toastMs)
+      }, animMs)
+    }
+
+    runLoop()
+    return () => { if (tutorialLoopRef.current) clearTimeout(tutorialLoopRef.current) }
+  }, [phase, tutorialPath])
+
+  useEffect(() => {
+    if (phase === "path-draw" && drawnPath.length > 0 && !hasStartedDrawing) {
+      setHasStartedDrawing(true)
+      setDrawStartTime(Date.now())
+    }
+    if (phase !== "path-draw") {
+      setHasStartedDrawing(false)
+      if (phase === "exit-select") setElapsedTime(0)
+    }
+  }, [drawnPath, phase, hasStartedDrawing])
 
   useEffect(() => {
     let timer: any
-    if (phase === "path-draw") {
-      const start = Date.now()
-      setDrawStartTime(start)
-      setElapsedTime(0)
+    if (phase === "path-draw" && hasStartedDrawing) {
       timer = setInterval(() => {
-        setElapsedTime(Date.now() - start)
+        setElapsedTime(Date.now() - drawStartTime)
       }, 100)
     }
     return () => clearInterval(timer)
-  }, [phase])
+  }, [phase, hasStartedDrawing, drawStartTime])
 
-  const pickNewHazard = () => {
+  const pickNewHazard = (mode: "practice" | "exam") => {
     const room = ROOMS[Math.floor(Math.random() * ROOMS.length)]
     setHazardNode(room.nodeId)
     setSelectedExit("")
     setDrawnPath([])
+    setGameMode(mode)
     
     // Tutorial Setup
-    const { dists, minD } = getNearestExits(N, DEFAULT_GRAPH.adj, room.nodeId)
-    const nearestExitKey = Object.keys(dists).find(ex => dists[ex].dist === minD && ex !== "ASSEMBLY")
-    if (nearestExitKey) {
-      const exitPathStr = dists[nearestExitKey].path
-      const assemblyPathStr = dijkstra(N, DEFAULT_GRAPH.adj, nearestExitKey, "ASSEMBLY").path
-      const fullPathStr = [...exitPathStr, ...assemblyPathStr.slice(1)]
-      setTutorialPath(fullPathStr.map(k => N[k]))
-      setSelectedExit(nearestExitKey)
+    const routes = IDEAL_ROUTES[room.nodeId]
+    if (routes && routes.length > 0) {
+      const idealRoute = routes[0]
+      setTutorialPath(idealRoute.blocks)
+      setSelectedExit(idealRoute.exit)
+    } else {
+      const { dists, minD } = getNearestExits(N, DEFAULT_GRAPH.adj, room.nodeId)
+      const nearestExitKey = Object.keys(dists).find(ex => dists[ex].dist === minD && ex !== "ASSEMBLY")
+      if (nearestExitKey) {
+        const exitPathStr = dists[nearestExitKey].path
+        const assemblyPathStr = dijkstra(N, DEFAULT_GRAPH.adj, nearestExitKey, "ASSEMBLY").path
+        const fullPathStr = [...exitPathStr, ...assemblyPathStr.slice(1)]
+        setTutorialPath(fullPathStr.map(k => N[k]))
+        setSelectedExit(nearestExitKey)
+      }
     }
 
-    setPhase("tutorial")
+    if (mode === "exam") {
+      setPhase("exit-select")
+    } else {
+      setPhase("tutorial")
+    }
   }
 
   const handleHazardConfirmed = () => {
@@ -135,7 +218,6 @@ export default function TrainingScreen() {
         setPhase("exit-select")
         setSelectedExit("")
       } else {
-        // Find next room not in IDEAL_ROUTES
         let nextIndex = wizardIndex + 1
         while (nextIndex < ROOMS.length && IDEAL_ROUTES[ROOMS[nextIndex].nodeId]) {
           nextIndex++
@@ -152,57 +234,75 @@ export default function TrainingScreen() {
     
     // 1. Grade Exit Selection (Max 20 pts)
     const hazardPt = N[hazardNode]
-    const exitDistances = ["G1", "G2", "G3"].reduce((acc, ex) => {
-      if (N[ex]) {
-        const d = Math.sqrt((N[ex].x - hazardPt.x) ** 2 + (N[ex].y - hazardPt.y) ** 2)
-        acc[ex] = d
-      }
-      return acc
-    }, {} as Record<string, number>)
-
-    const minD = Math.min(...Object.values(exitDistances))
-    const selectedDist = exitDistances[selectedExit]
-
-    // 15% visual tolerance
-    const isNearest = selectedDist <= minD * 1.15 || Math.abs(selectedDist - minD) < 50
-    const exitScore = isNearest ? 20 : 5
+    const blockSize = 25
+    let optimalBlockCount = 0;
+    
+    const idealRoutesForHazard = IDEAL_ROUTES[hazardNode] || [];
+    
+    let targetGateForRank1 = "";
+    if (idealRoutesForHazard.length > 0) {
+      const rank1ZoneId = idealRoutesForHazard[0].exit;
+      const rank1Zone = EXIT_ZONES.find(z => z.id === rank1ZoneId);
+      if (rank1Zone) targetGateForRank1 = (rank1Zone as any).targetNode;
+    }
+    
+    const isNearest = (selectedExit === targetGateForRank1);
+    const exitScore = isNearest ? 20 : 5;
 
     // 2. Grade Path Traced (Max 40 pts)
-    const blockSize = 25
-    
-    // Find optimal path blocks
-    const exitBlocks = PATH_BLOCKS.filter(b => 
-      EXIT_ZONES.some(z => b.x >= z.x && b.x <= z.x + z.width && b.y >= z.y && b.y <= z.y + z.height)
-    );
-    const hazardStartBlock = PATH_BLOCKS.reduce((closest, b) => {
-        const d = Math.sqrt((b.x - hazardPt.x) ** 2 + (b.y - hazardPt.y) ** 2);
-        return d < closest.d ? { b, d } : closest;
-    }, { b: PATH_BLOCKS[0], d: Infinity }).b;
+    if (idealRoutesForHazard.length > 0) {
+      const idealRoute = idealRoutesForHazard.find(r => {
+        const zone = EXIT_ZONES.find(z => z.id === r.exit);
+        return zone && (zone as any).targetNode === selectedExit;
+      });
+      
+      if (idealRoute) {
+        let idealPathDist = 0;
+        for (let i = 0; i < idealRoute.blocks.length - 1; i++) {
+          idealPathDist += ptDist(idealRoute.blocks[i], idealRoute.blocks[i+1]);
+        }
+        optimalBlockCount = idealPathDist / blockSize;
+      }
+    }
 
-    const shortestBlocks = findShortestGridPath(PATH_BLOCKS, hazardStartBlock, exitBlocks, blockSize) || [];
-    const optimalBlockCount = shortestBlocks.length;
+    if (optimalBlockCount === 0) {
+      const exitBlocks = PATH_BLOCKS.filter(b => 
+        EXIT_ZONES.some(z => b.x >= z.x && b.x <= z.x + z.width && b.y >= z.y && b.y <= z.y + z.height)
+      );
+      const hazardStartBlock = PATH_BLOCKS.reduce((closest, b) => {
+          const d = Math.sqrt((b.x - hazardPt.x) ** 2 + (b.y - hazardPt.y) ** 2);
+          return d < closest.d ? { b, d } : closest;
+      }, { b: PATH_BLOCKS[0], d: Infinity }).b;
+
+      const shortestBlocks = findShortestGridPath(PATH_BLOCKS, hazardStartBlock, exitBlocks, blockSize) || [];
+      optimalBlockCount = shortestBlocks.length;
+      if (shortestBlocks.length > 0) {
+         const lastExitBlock = shortestBlocks[shortestBlocks.length - 1];
+         const assemblyNode = N["ASSEMBLY"];
+         const distToAssembly = ptDist(lastExitBlock, assemblyNode);
+         optimalBlockCount += distToAssembly / blockSize;
+      }
+    }
     
-    // Calculate user's length in pixels
     let userPathDist = 0
     for (let i = 0; i < finalPath.length - 1; i++) {
       userPathDist += ptDist(finalPath[i], finalPath[i+1])
     }
     
-    // Estimate user's block count based on length
     const userBlockCount = userPathDist / blockSize;
-
     const deviation = Math.max(0, Math.abs(userBlockCount - optimalBlockCount))
     let pathScoreVal = 5
     let accuracy: "excellent" | "good" | "average" | "poor" = "poor"
 
+    // Path Leniency Percentages
     if (deviation <= optimalBlockCount * 0.05) {
-      pathScoreVal = 40
+      pathScoreVal = 40 // 5% leniency
       accuracy = "excellent"
-    } else if (deviation <= optimalBlockCount * 0.2) {
-      pathScoreVal = 30
+    } else if (deviation <= optimalBlockCount * 0.15) {
+      pathScoreVal = 30 // 15% leniency
       accuracy = "good"
-    } else if (deviation <= optimalBlockCount * 0.45) {
-      pathScoreVal = 15
+    } else if (deviation <= optimalBlockCount * 0.30) {
+      pathScoreVal = 15 // 30% leniency
       accuracy = "average"
     } else {
       pathScoreVal = 5
@@ -210,33 +310,46 @@ export default function TrainingScreen() {
     }
 
     // 3. Grade Speed (Max 40 pts)
-    let speedScore = 0
-    if (duration <= 10000) {
-      speedScore = 40
-    } else if (duration <= 15000) {
-      speedScore = 25
-    } else if (duration <= 20000) {
-      speedScore = 10
+    // Time Leniency Percentages (Expected 120ms per block drawn, minimum 3.5 seconds)
+    const expectedTimeMs = Math.max(3500, optimalBlockCount * 120); 
+    const timeDeviation = Math.max(0, duration - expectedTimeMs);
+    let speedScore = 0;
+    
+    if (timeDeviation <= expectedTimeMs * 0.10) {
+      speedScore = 40; // 10% extra time leniency
+    } else if (timeDeviation <= expectedTimeMs * 0.25) {
+      speedScore = 25; // 25% extra time leniency
+    } else if (timeDeviation <= expectedTimeMs * 0.50) {
+      speedScore = 10; // 50% extra time leniency
     } else {
-      speedScore = 0
+      speedScore = 0;
+    }
+
+    if (!isNearest) {
+      pathScoreVal = 0;
+      speedScore = 0;
+      accuracy = "poor";
     }
 
     const totalAttemptScore = exitScore + pathScoreVal + speedScore
     setResultScore(totalAttemptScore)
+    setResultBreakdown({ exit: exitScore, path: pathScoreVal, speed: speedScore })
 
-    // Set user feedback message
     const sec = (duration / 1000).toFixed(1)
-    if (totalAttemptScore >= 90) {
-      setResultTitle("🏆 Outstanding Escape!")
+    if (!isNearest) {
+      setResultTitle("Fatal Error!")
+      setResultMsg("You selected the wrong emergency exit! This is highly dangerous.")
+    } else if (totalAttemptScore >= 90) {
+      setResultTitle("Outstanding Escape!")
       setResultMsg(`Perfect execution! Cleared in ${sec}s.`)
     } else if (totalAttemptScore >= 70) {
-      setResultTitle("✅ Good Attempt")
+      setResultTitle("Good Attempt")
       setResultMsg(`Good pathing, but could be faster. Cleared in ${sec}s.`)
     } else if (totalAttemptScore >= 40) {
-      setResultTitle("⚠️ Needs Improvement")
+      setResultTitle("Needs Improvement")
       setResultMsg(`Average route. Try drawing the path faster next time. Cleared in ${sec}s.`)
     } else {
-      setResultTitle("❌ Poor Route")
+      setResultTitle("Poor Route")
       setResultMsg(`Too slow or took the long way around. Cleared in ${sec}s.`)
     }
 
@@ -271,17 +384,16 @@ export default function TrainingScreen() {
     if (testData.attempts.length >= testData.totalAttempts) {
       navigate("/result")
     } else {
-      pickNewHazard()
+      pickNewHazard(gameMode as "practice" | "exam")
     }
   }
 
-  // Telemetry Calculations for real-time overlay
+  // Telemetry Calculations
   let userPathDist = 0
   for (let i = 0; i < drawnPath.length - 1; i++) {
     userPathDist += ptDist(drawnPath[i], drawnPath[i+1])
   }
   
-  // Calculate block logic for telemetry
   const blockSize = 25
   const exitBlocks = PATH_BLOCKS.filter(b => 
     EXIT_ZONES.some(z => b.x >= z.x && b.x <= z.x + z.width && b.y >= z.y && b.y <= z.y + z.height)
@@ -295,13 +407,15 @@ export default function TrainingScreen() {
   const shortestBlocks = (selectedExit && PATH_BLOCKS.length > 0 ? findShortestGridPath(PATH_BLOCKS, hazardStartBlock, exitBlocks, blockSize) : []) || [];
   const optimalBlockCount = shortestBlocks.length;
   const userBlockCount = userPathDist / blockSize;
-
   const currentDeviation = selectedExit && PATH_BLOCKS.length > 0 ? Math.max(0, Math.abs(userBlockCount - optimalBlockCount)) : 0;
 
   const exportWizardData = () => {
     let str = "export const IDEAL_ROUTES: Record<string, { exit: string, blocks: {x: number, y: number}[] }[]> = {\n"
-    Object.keys(wizardRoutes).forEach(k => {
-      const routesArray = wizardRoutes[k]
+    
+    const allKeys = Array.from(new Set([...Object.keys(IDEAL_ROUTES), ...Object.keys(wizardRoutes)]))
+    
+    allKeys.forEach(k => {
+      const routesArray = wizardRoutes[k] || IDEAL_ROUTES[k]
       str += `  "${k}": [\n`
       routesArray.forEach(data => {
         str += `    { exit: "${data.exit}", blocks: ${JSON.stringify(data.blocks)} },\n`
@@ -312,61 +426,77 @@ export default function TrainingScreen() {
     navigator.clipboard.writeText(str).then(() => alert("Wizard Routes copied to clipboard!"))
   }
 
+  // Derived UI helpers
+  const roomName = ROOMS.find(r => r.nodeId === hazardNode)?.name || "Emergency"
+  const attemptNum = Math.min(testData.attempts.length + 1, testData.totalAttempts)
+  const elapsedSec = (elapsedTime / 1000).toFixed(1)
+  const speedColor = elapsedTime < 10000 ? "text-emerald-400" : elapsedTime < 15000 ? "text-amber-400" : "text-red-400"
+  const isLastAttempt = testData.attempts.length >= testData.totalAttempts
+
+  const scoreColor = resultScore >= 90 ? "text-emerald-500" : resultScore >= 70 ? "text-indigo-500" : resultScore >= 40 ? "text-amber-500" : "text-red-500"
+  const scoreGradient = resultScore >= 90
+    ? "from-emerald-500 to-teal-600"
+    : resultScore >= 70
+    ? "from-indigo-500 to-sky-600"
+    : resultScore >= 40
+    ? "from-amber-500 to-orange-600"
+    : "from-red-500 to-rose-600"
+  const ScoreIcon = resultScore >= 70 ? CheckCircle2 : resultScore >= 40 ? AlertTriangle : XCircle
+
   return (
     <LayoutShell showHeader={phase !== "edit"}>
-      <div className="space-y-2 pb-12 select-none">
+      <div className="flex flex-col gap-3 pb-12 select-none">
         
-        {/* Modern Phase HUD / Status Banner */}
-        <div className="flex flex-row flex-wrap items-center justify-between gap-3 bg-white border border-slate-100 rounded-2xl py-2 px-4 shadow-sm animate-in fade-in duration-300">
+        {/* ── Phase HUD Banner ── */}
+        <div className="flex flex-row flex-wrap items-center justify-between gap-3 bg-white border border-slate-100 rounded-2xl py-2.5 px-4 shadow-sm">
+          
+          {/* Left: Step indicators + title */}
           <div className="flex flex-wrap items-center gap-4">
             
-            {/* Step-by-Step Sequence Indicators */}
-            <div className="flex items-center gap-2 bg-slate-50/80 px-3 py-2 rounded-xl border border-slate-100">
-              <div className={`flex items-center justify-center w-7 h-7 rounded-full text-xs font-black transition-all ${
-                phase === 'hazard-confirm' 
-                  ? 'bg-red-500 text-white shadow-md shadow-red-500/20' 
-                  : phase !== 'edit'
-                    ? 'bg-red-500/10 text-red-500'
-                    : 'bg-slate-200 text-slate-400'
-              }`}>
-                {phase !== 'edit' ? "✓" : "1"}
+            {/* Step Pills */}
+            {phase !== "idle" && phase !== "edit" && (
+              <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-100 rounded-xl px-3 py-2">
+                {[
+                  { n: 1, active: phase === "hazard-confirm" || phase === "tutorial", done: phase === "exit-select" || phase === "path-draw" || phase === "evaluated", color: "red" },
+                  { n: 2, active: phase === "exit-select", done: phase === "path-draw" || phase === "evaluated", color: "emerald" },
+                  { n: 3, active: phase === "path-draw", done: phase === "evaluated", color: "sky" },
+                ].map((s, i) => (
+                  <div key={s.n} className="flex items-center gap-1.5">
+                    {i > 0 && <div className={`w-5 h-px ${s.done || s.active ? "bg-slate-300" : "bg-slate-200"}`} />}
+                    <div className={`flex items-center justify-center w-7 h-7 rounded-full text-xs font-black transition-all duration-300 ${
+                      s.done
+                        ? s.color === "red" ? "bg-red-100 text-red-500" : s.color === "emerald" ? "bg-emerald-100 text-emerald-600" : "bg-sky-100 text-sky-600"
+                        : s.active
+                        ? s.color === "red" ? "bg-red-500 text-white shadow-md shadow-red-500/30 animate-pulse" : s.color === "emerald" ? "bg-emerald-500 text-white shadow-md shadow-emerald-500/30 animate-pulse" : "bg-sky-500 text-white shadow-md shadow-sky-500/30 animate-pulse"
+                        : "bg-slate-200 text-slate-400"
+                    }`}>
+                      {s.done ? "✓" : s.n}
+                    </div>
+                  </div>
+                ))}
               </div>
-              <div className="w-4 h-0.5 bg-slate-200" />
-              <div className={`flex items-center justify-center w-7 h-7 rounded-full text-xs font-black transition-all ${
-                phase === 'exit-select' 
-                  ? 'bg-emerald-500 text-white shadow-md shadow-emerald-500/20 animate-pulse' 
-                  : phase === 'path-draw' || phase === 'evaluated'
-                    ? 'bg-emerald-500/10 text-emerald-500'
-                    : 'bg-slate-200 text-slate-400'
-              }`}>
-                {phase === 'path-draw' || phase === 'evaluated' ? "✓" : "2"}
-              </div>
-              <div className="w-4 h-0.5 bg-slate-200" />
-              <div className={`flex items-center justify-center w-7 h-7 rounded-full text-xs font-black transition-all ${
-                phase === 'path-draw' 
-                  ? 'bg-sky-500 text-white shadow-md shadow-sky-500/20 animate-pulse' 
-                  : phase === 'evaluated'
-                    ? 'bg-sky-500/10 text-sky-500'
-                    : 'bg-slate-200 text-slate-400'
-              }`}>
-                {phase === 'evaluated' ? "✓" : "3"}
-              </div>
-            </div>
+            )}
 
             <div className="h-8 w-px bg-slate-200 hidden md:block" />
 
+            {/* Title + subtitle */}
             <div>
-              <h3 className="font-extrabold text-slate-800 text-sm tracking-tight">
-                {isWizard && <span className="text-indigo-600 mr-2">[WIZARD {wizardIndex + 1}/{ROOMS.length}]</span>}
-                {phase === "tutorial" && `Tutorial: ${ROOMS.find(r => r.nodeId === hazardNode)?.name || "Emergency"}`}
+              <h3 className="font-extrabold text-slate-800 text-sm tracking-tight flex items-center gap-1.5">
+                {isWizard && <span className="text-indigo-600 bg-indigo-50 border border-indigo-100 rounded-lg px-2 py-0.5 text-[10px] font-black uppercase tracking-wider mr-1">WIZARD {wizardIndex + 1}/{ROOMS.length}</span>}
+                {gameMode === "exam" && phase !== "evaluated" && phase !== "idle" && (
+                  <span className="text-rose-600 bg-rose-50 border border-rose-100 rounded-lg px-2 py-0.5 text-[10px] font-black uppercase tracking-wider mr-1">EXAM</span>
+                )}
+                {phase === "idle" && <span className="text-slate-500">Select a mode to begin</span>}
+                {phase === "tutorial" && `Tutorial: ${roomName}`}
                 {phase === "hazard-confirm" && t("step1Title")}
                 {phase === "exit-select" && (isWizard ? `Select Rank ${wizardExitRank} Nearest Exit` : t("step2Title"))}
                 {phase === "path-draw" && t("step3Title")}
                 {phase === "evaluated" && t("evaluatedTitle")}
-                {phase === "edit" && "Map Editor Node Placement Mode"}
+                {phase === "edit" && "Map Editor"}
               </h3>
-              <p className="text-xs text-slate-500 font-semibold mt-0.5">
-                {phase === "tutorial" && "Observe the shortest evacuation route."}
+              <p className="text-xs text-slate-500 font-medium mt-0.5">
+                {phase === "idle" && "Practice to prepare, or take the Exam to be scored."}
+                {phase === "tutorial" && "Observe the ideal evacuation route, then proceed."}
                 {phase === "hazard-confirm" && t("step1Desc")}
                 {phase === "exit-select" && (isWizard ? `Click on the gate that is the ${wizardExitRank} nearest to the hazard.` : t("step2Desc"))}
                 {phase === "path-draw" && t("step3Desc")}
@@ -375,29 +505,66 @@ export default function TrainingScreen() {
             </div>
           </div>
 
-          <div className="flex items-center justify-between xl:justify-end gap-2.5 shrink-0 flex-wrap">
-            {phase === "tutorial" && (
-              <Button
-                variant="default"
-                size="sm"
-                onClick={() => setPhase("hazard-confirm")}
-                className="h-8 px-4 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-xs flex items-center shadow-md shadow-indigo-600/20"
-              >
-                Start Practice 🚀
-              </Button>
+          {/* Right: Action buttons */}
+          <div className="flex items-center justify-end gap-2.5 shrink-0 flex-wrap">
+
+            {/* Idle: Start buttons (DEV-only) */}
+            {phase === "idle" && import.meta.env.DEV && (
+              <>
+                <Button
+                  variant="default"
+                  size="sm"
+                  onClick={() => { setGameMode("practice"); pickNewHazard("practice"); }}
+                  className="h-9 px-5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-xs flex items-center gap-2 shadow-md shadow-indigo-600/25 transition-all hover:scale-105"
+                >
+                  <BookOpen className="h-3.5 w-3.5" /> Practice
+                </Button>
+                <Button
+                  variant="default"
+                  size="sm"
+                  onClick={() => { setGameMode("exam"); pickNewHazard("exam"); }}
+                  className="h-9 px-5 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-xl text-xs flex items-center gap-2 shadow-md shadow-rose-600/25 transition-all hover:scale-105"
+                >
+                  <ClipboardCheck className="h-3.5 w-3.5" /> Exam Mode
+                </Button>
+              </>
             )}
+
+            {/* Tutorial: Proceed button */}
+            {phase === "tutorial" && (
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => { setGameMode("exam"); pickNewHazard("exam"); }}
+                  className="h-9 px-4 border-slate-200 hover:bg-slate-50 font-bold rounded-xl text-xs flex items-center gap-2 shadow-sm text-slate-600 transition-all hover:scale-105"
+                >
+                  Skip Training
+                </Button>
+                <Button
+                  variant="default"
+                  size="sm"
+                  onClick={() => setPhase("hazard-confirm")}
+                  className="h-9 px-5 bg-sky-600 hover:bg-sky-500 text-white font-bold rounded-xl text-xs flex items-center gap-2 shadow-md shadow-sky-600/20 transition-all hover:scale-105"
+                >
+                  I understand <ChevronRight className="h-3.5 w-3.5" />
+                </Button>
+              </>
+            )}
+
+            {/* Path Draw: Timer + controls */}
             {phase === "path-draw" && (
               <>
-                <div className="flex items-center gap-2 bg-slate-900 text-slate-200 px-3 py-1.5 rounded-xl font-mono text-xs font-bold shadow-inner">
-                  <Timer className="h-4 w-4 text-sky-400 animate-spin-slow" />
-                  <span>{(elapsedTime / 1000).toFixed(1)}s</span>
+                <div className={`flex items-center gap-2 bg-slate-900 px-3 py-1.5 rounded-xl font-mono text-xs font-bold shadow-inner border border-slate-700`}>
+                  <Timer className={`h-3.5 w-3.5 animate-pulse ${speedColor}`} />
+                  <span className={speedColor}>{elapsedSec}s</span>
                 </div>
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={handleUndo}
                   disabled={drawnPath.length <= 1}
-                  className="h-8 px-2.5 border-slate-200 hover:bg-slate-50 hover:text-slate-700 font-semibold rounded-xl text-xs flex items-center gap-1.5 cursor-pointer shadow-sm bg-white"
+                  className="h-8 px-2.5 border-slate-200 hover:bg-slate-50 font-semibold rounded-xl text-xs flex items-center gap-1.5 cursor-pointer shadow-sm bg-white disabled:opacity-40"
                 >
                   <Undo2 className="h-3.5 w-3.5" /> <span className="hidden md:inline">{t("undoLast")}</span>
                 </Button>
@@ -405,7 +572,7 @@ export default function TrainingScreen() {
                   variant="outline"
                   size="sm"
                   onClick={handleClear}
-                  className="h-8 px-2.5 border-slate-200 hover:bg-slate-50 hover:text-slate-700 font-semibold rounded-xl text-xs flex items-center gap-1.5 cursor-pointer shadow-sm bg-white"
+                  className="h-8 px-2.5 border-slate-200 hover:bg-red-50 hover:text-red-600 hover:border-red-200 font-semibold rounded-xl text-xs flex items-center gap-1.5 cursor-pointer shadow-sm bg-white"
                 >
                   <RotateCcw className="h-3.5 w-3.5" /> <span className="hidden md:inline">{t("clearTracing")}</span>
                 </Button>
@@ -420,20 +587,22 @@ export default function TrainingScreen() {
                     Save Route & Next
                   </Button>
                 )}
-
               </>
             )}
             
-            {/* Visual Attempts Segmented Gauge */}
-            <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-100 rounded-xl px-2.5 py-1.5">
-              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{t("attempts")}</span>
-              <span className="text-sm font-black text-slate-700 font-mono leading-none flex items-baseline tracking-tighter">
-                {Math.min(testData.attempts.length + 1, testData.totalAttempts)}
-                <span className="text-xs text-slate-400 font-bold mx-0.5">/</span>
-                <span className="text-[11px] text-slate-400">{testData.totalAttempts}</span>
-              </span>
-            </div>
+            {/* Attempt counter */}
+            {phase !== "idle" && phase !== "edit" && (
+              <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-100 rounded-xl px-2.5 py-1.5">
+                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{t("attempts")}</span>
+                <span className="text-sm font-black text-slate-700 font-mono leading-none flex items-baseline tracking-tighter">
+                  {attemptNum}
+                  <span className="text-xs text-slate-400 font-bold mx-0.5">/</span>
+                  <span className="text-[11px] text-slate-400">{testData.totalAttempts}</span>
+                </span>
+              </div>
+            )}
 
+            {/* DEV-only: Wizard & Edit buttons */}
             {import.meta.env.DEV && (
               <>
                 {!isWizard ? (
@@ -478,9 +647,9 @@ export default function TrainingScreen() {
           </div>
         </div>
 
-        {/* Map Container */}
-        <div className="relative">
-          <PlantMap
+        {/* ── Map Container ── */}
+        <div className="relative rounded-2xl overflow-hidden shadow-md border border-slate-200">
+          <PlantMapKonva
             phase={phase}
             hazardNode={hazardNode}
             selectedExit={selectedExit}
@@ -493,44 +662,109 @@ export default function TrainingScreen() {
             isWizard={isWizard}
             wizardDrawnPaths={wizardRoutes[hazardNode] ? wizardRoutes[hazardNode].map(r => r.blocks) : []}
             wizardSelectedExits={wizardRoutes[hazardNode] ? wizardRoutes[hazardNode].map(r => r.exit) : []}
+            showAssemblyReached={showAssemblyReached}
+            showTutorialPath={showTutorialPath}
+            tutorialKey={tutorialKey}
           />
 
-          {/* Real-time Route Telemetry HUD Overlay */}
-          {phase === "path-draw" && (
-            <div className="absolute top-4 left-4 z-20 bg-slate-900/90 text-white rounded-xl border border-slate-700/50 p-4 shadow-xl backdrop-blur-md w-48 text-xs font-mono space-y-2.5 animate-in slide-in-from-left-4 duration-300">
-              <p className="font-extrabold text-sky-400 border-b border-slate-800 pb-1.5 uppercase tracking-wider text-[9px]">
-                Telemetry Overlay
-              </p>
-              <div className="space-y-1.5 text-slate-300">
-                <div className="flex justify-between gap-2">
-                  <span>Drawn Path:</span>
-                  <span className="font-bold text-slate-100">{Math.round(userPathDist)}px</span>
+          {/* ── Tutorial: Assembly Reached Toast Overlay ── */}
+          {phase === "tutorial" && showAssemblyReached && (
+            <div className="absolute inset-0 z-40 flex items-center justify-center pointer-events-none">
+              <div
+                className="flex items-center gap-4 px-8 py-5 rounded-2xl shadow-2xl border pointer-events-none"
+                style={{
+                  background: 'linear-gradient(135deg, #14532d 0%, #166534 60%, #15803d 100%)',
+                  border: '1.5px solid rgba(134,239,172,0.5)',
+                  boxShadow: '0 0 0 4px rgba(34,197,94,0.15), 0 20px 60px rgba(22,101,52,0.55)',
+                  animation: 'slide-up-fade 0.45s cubic-bezier(0.16,1,0.3,1) forwards',
+                  maxWidth: '90%',
+                }}
+              >
+                <div className="flex-shrink-0 w-14 h-14 rounded-full bg-green-400/20 border-2 border-green-400/50 flex items-center justify-center text-3xl">
+                  ✅
                 </div>
-                <div className="flex justify-between gap-2">
-                  <span>Deviation:</span>
-                  <span className={`font-bold ${currentDeviation > optimalBlockCount * 0.25 ? 'text-amber-400' : 'text-emerald-400'}`}>
-                    {Math.round(currentDeviation)} blocks
-                  </span>
+                <div>
+                  <div className="text-white font-black text-xl tracking-tight leading-snug">You have reached the</div>
+                  <div className="text-green-300 font-black text-2xl tracking-tight leading-snug">Emergency Assembly Area!</div>
+                  <div className="text-green-200/80 text-sm mt-1 font-medium">This is the safe muster point during an evacuation.</div>
                 </div>
               </div>
             </div>
           )}
+
+          {/* ── Idle overlay: Mode selection prompt (DEV-only) ── */}
+          {phase === "idle" && import.meta.env.DEV && (
+            <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-slate-900/60 backdrop-blur-sm">
+              <div className="rounded-3xl border border-white/10 bg-slate-900/80 p-10 text-center shadow-2xl max-w-md w-full mx-4 animate-in zoom-in-95 duration-400">
+                <div className="text-5xl mb-4">🏭</div>
+                <h2 className="text-2xl font-black text-white mb-2 tracking-tight">Fire Evacuation Training</h2>
+                <p className="text-slate-400 text-sm mb-8 leading-relaxed">Test your knowledge of emergency exits and evacuation procedures across the plant layout.</p>
+                <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                  <button
+                    onClick={() => { setGameMode("practice"); pickNewHazard("practice"); }}
+                    className="flex-1 flex flex-col items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-2xl px-6 py-5 shadow-lg shadow-indigo-600/30 transition-all hover:scale-105 cursor-pointer"
+                  >
+                    <BookOpen className="h-6 w-6" />
+                    <span className="text-sm">Practice Mode</span>
+                    <span className="text-[10px] text-indigo-200 font-normal">Tutorial hints shown</span>
+                  </button>
+                  <button
+                    onClick={() => { setGameMode("exam"); pickNewHazard("exam"); }}
+                    className="flex-1 flex flex-col items-center gap-2 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-2xl px-6 py-5 shadow-lg shadow-rose-600/30 transition-all hover:scale-105 cursor-pointer"
+                  >
+                    <ClipboardCheck className="h-6 w-6" />
+                    <span className="text-sm">Exam Mode</span>
+                    <span className="text-[10px] text-rose-200 font-normal">No hints, fully scored</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+
           
+          {/* ── Evaluated Result Modal ── */}
           {phase === "evaluated" && (
-            <div className="absolute inset-0 z-30 flex items-center justify-center bg-slate-955/40 rounded-xl backdrop-blur-xs animate-in fade-in duration-300 p-4">
-              <div className="rounded-2xl border border-slate-100 bg-white p-8 text-center shadow-2xl max-w-sm w-full animate-in zoom-in-95 duration-500">
-                <div className="text-5xl mb-3">{resultScore >= 90 ? "🏆" : resultScore >= 60 ? "✅" : "❌"}</div>
-                <h3 className="mb-2 text-2xl font-black text-slate-800">{resultTitle}</h3>
-                <p className="mb-4 text-xs font-semibold text-indigo-600">Evacuation Grade: {resultScore} / 100</p>
-                <p className="mb-6 text-xs text-slate-500 leading-relaxed font-medium">{resultMsg}</p>
-                <button
-                  onClick={handleNextRound}
-                  className="rounded-xl bg-indigo-600 px-8 py-3.5 text-sm font-bold text-white hover:bg-indigo-500 shadow-md shadow-indigo-600/20 w-full transition-all cursor-pointer"
-                >
-                  {testData.attempts.length >= testData.totalAttempts
-                    ? t("viewFinalScore")
-                    : t("continueButton")}
-                </button>
+            <div className="absolute inset-0 z-30 flex items-center justify-center bg-slate-900/50 rounded-xl backdrop-blur-sm animate-in fade-in duration-300 p-4">
+              <div className="rounded-3xl border border-slate-100 bg-white shadow-2xl max-w-sm w-full animate-in zoom-in-95 duration-400 overflow-hidden">
+                {/* Score header gradient strip */}
+                <div className={`bg-gradient-to-r ${scoreGradient} p-6 text-center text-white`}>
+                  <ScoreIcon className="h-12 w-12 mx-auto mb-2 opacity-90" />
+                  <p className="text-4xl font-black mb-0.5">{resultScore}<span className="text-lg font-bold opacity-70">/100</span></p>
+                  <h3 className="text-lg font-black tracking-tight">{resultTitle}</h3>
+                </div>
+                
+                {/* Breakdown */}
+                <div className="p-5">
+                  {resultBreakdown && (
+                    <div className="grid grid-cols-3 gap-2 mb-4">
+                      {[
+                        { label: "Exit", value: resultBreakdown.exit, max: 20, color: "emerald" },
+                        { label: "Path", value: resultBreakdown.path, max: 40, color: "sky" },
+                        { label: "Speed", value: resultBreakdown.speed, max: 40, color: "indigo" },
+                      ].map(item => (
+                        <div key={item.label} className={`rounded-xl bg-${item.color}-50 border border-${item.color}-100 p-2.5 text-center`}>
+                          <p className={`text-lg font-black text-${item.color}-600`}>{item.value}</p>
+                          <p className={`text-[9px] font-bold text-${item.color}-400 uppercase tracking-wide`}>{item.label}</p>
+                          <p className={`text-[9px] text-${item.color}-300`}>/{item.max}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  
+                  <p className="text-xs text-slate-500 leading-relaxed font-medium mb-5 text-center">{resultMsg}</p>
+                  
+                  <button
+                    onClick={handleNextRound}
+                    className={`rounded-xl bg-gradient-to-r ${scoreGradient} px-8 py-3.5 text-sm font-bold text-white w-full transition-all hover:opacity-90 hover:scale-[1.02] shadow-md cursor-pointer flex items-center justify-center gap-2`}
+                  >
+                    {isLastAttempt ? (
+                      <><Trophy className="h-4 w-4" /> {t("viewFinalScore")}</>
+                    ) : (
+                      <>{t("continueButton")} <ChevronRight className="h-4 w-4" /></>
+                    )}
+                  </button>
+                </div>
               </div>
             </div>
           )}

@@ -10,7 +10,6 @@ import HomeScreen from "./screens/HomeScreen"
 import InstructionsScreen from "./screens/InstructionsScreen"
 import EmployeeDetailsScreen from "./screens/EmployeeDetailsScreen"
 import TrainingScreen from "./screens/TrainingScreen"
-import TrainingScreenKonva from "./screens/TrainingScreenKonva"
 import ResultScreen from "./screens/ResultScreen"
 
 export default function App() {
@@ -27,7 +26,6 @@ export default function App() {
             <Route path="/instructions" element={<InstructionsScreen />} />
             <Route path="/form" element={<EmployeeDetailsScreen />} />
             <Route path="/training" element={<TrainingScreen />} />
-            <Route path="/training-exp" element={<TrainingScreenKonva />} />
             <Route path="/result" element={<ResultScreen />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

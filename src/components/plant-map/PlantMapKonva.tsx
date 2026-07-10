@@ -19,6 +19,9 @@ interface PlantMapProps {
   isWizard?: boolean
   wizardDrawnPaths?: Point[][]
   wizardSelectedExits?: string[]
+  showAssemblyReached?: boolean
+  showTutorialPath?: boolean
+  tutorialKey?: number
 }
 
 type EditTool = "drag" | "add" | "connect" | "delete" | "trace"
@@ -36,7 +39,10 @@ export function PlantMapKonva({
   onPathComplete,
   isWizard,
   wizardDrawnPaths = [],
-  wizardSelectedExits = []
+  wizardSelectedExits = [],
+  showAssemblyReached = false,
+  showTutorialPath = true,
+  tutorialKey = 0,
 }: PlantMapProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const stageRef = useRef<any>(null)
@@ -367,7 +373,7 @@ export function PlantMapKonva({
         // Check if released near assembly area
         if (ptDist(pt, assemblyNode) < 120) {
           const firstPoint = drawnPath[0];
-          const selectedExitNode = nodes[selectedExit];
+          const selectedExitNode = selectedExit ? nodes[selectedExit] : undefined;
           // Ensure they drew a path from the selected exit, and it has some length
           if (firstPoint && selectedExitNode && ptDist(firstPoint, selectedExitNode) > 100) {
             alert("Please start drawing your path from the Exit Gate you selected!");
@@ -695,6 +701,9 @@ export function PlantMapKonva({
                       onClick={() => {
                         if (phase === "exit-select" && onExitSelected && !isWizardSelected) onExitSelected(zoneIdentifier)
                       }}
+                      onTap={() => {
+                        if (phase === "exit-select" && onExitSelected && !isWizardSelected) onExitSelected(zoneIdentifier)
+                      }}
                       onMouseEnter={(e) => {
                         if (phase === "exit-select" && !isWizardSelected) {
                           const container = e.target.getStage()?.container()
@@ -719,13 +728,16 @@ export function PlantMapKonva({
               })}
 
               {/* Render Tutorial Animated Path */}
-              {phase === "tutorial" && tutorialPath && tutorialPath.length > 0 && (() => {
+              {phase === "tutorial" && showTutorialPath && tutorialPath && tutorialPath.length > 0 && (() => {
                 let tutDist = 0;
                 for (let i = 0; i < tutorialPath.length - 1; i++) {
                   tutDist += ptDist(tutorialPath[i], tutorialPath[i + 1]);
                 }
+                const animDuration = Math.max(2, tutDist / 400)
+                const assemblyNode = nodes["ASSEMBLY"]
                 return (
-                  <Html divProps={{ style: { pointerEvents: 'none' } }}>
+                  <Html key={tutorialKey} divProps={{ style: { pointerEvents: 'none' } }}>
+                    {/* Animated path SVG */}
                     <svg width={1150} height={800} style={{ position: 'absolute', top: 0, left: 0 }}>
                       <path
                         d={tutorialPath.map((p, idx) => `${idx === 0 ? "M" : "L"} ${p.x} ${p.y}`).join(" ")}
@@ -738,10 +750,27 @@ export function PlantMapKonva({
                         style={{
                           strokeDasharray: tutDist,
                           strokeDashoffset: tutDist,
-                          animation: `draw-path ${Math.max(2, tutDist / 400)}s linear infinite`
+                          animation: `draw-path ${animDuration}s linear forwards`
                         }}
                       />
                     </svg>
+                    {/* Assembly Area radial pulse when reached */}
+                    {showAssemblyReached && assemblyNode && (
+                      <div
+                        style={{
+                          position: 'absolute',
+                          left: assemblyNode.x - 56,
+                          top: assemblyNode.y - 56,
+                          width: 112,
+                          height: 112,
+                          borderRadius: '50%',
+                          background: 'rgba(34,197,94,0.25)',
+                          boxShadow: '0 0 0 0 rgba(34,197,94,0.7)',
+                          animation: 'assembly-pulse 0.9s ease-out infinite',
+                          pointerEvents: 'none',
+                        }}
+                      />
+                    )}
                   </Html>
                 )
               })()}

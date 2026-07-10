@@ -13,11 +13,11 @@ export default function EmployeeDetailsScreen() {
 
   return (
     <LayoutShell>
-      <div className="space-y-6">
-        <h1 className="text-2xl font-bold text-indigo-700">
+      <div className="max-w-5xl mx-auto w-full px-4 md:px-8 space-y-6">
+        <h1 className="text-4xl font-black text-indigo-700">
           {t("employeeDetailsTitle")}
         </h1>
-        <p className="text-gray-500">{t("employeeDetailsSubtitle")}</p>
+        <p className="text-lg text-gray-500 font-medium">{t("employeeDetailsSubtitle")}</p>
         <EmployeeForm onSubmit={handleSubmit} />
       </div>
     </LayoutShell>
