@@ -27,7 +27,7 @@ jobs:
           java-version: '17'
 
       - name: Install Node Dependencies
-        run: npm ci
+        run: npm install
 
       - name: Create .env File
         run: |
