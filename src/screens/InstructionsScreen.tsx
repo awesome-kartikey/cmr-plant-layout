@@ -1,5 +1,6 @@
 import { useNavigate } from "react-router-dom"
 import { useTranslation } from "react-i18next"
+import { useTest } from "../contexts/TestContext"
 import { LayoutShell } from "../components/shared/LayoutShell"
 import { Button } from "../components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card"
@@ -8,6 +9,7 @@ import { Video, Trophy } from "lucide-react"
 export default function InstructionsScreen() {
   const navigate = useNavigate()
   const { t } = useTranslation()
+  const { testData } = useTest()
 
   const steps = [
     { title: t("identifyHazardStep"), key: "instruction1", detail: "instruction2" },
@@ -60,10 +62,10 @@ export default function InstructionsScreen() {
               <div className="space-y-4">
                 <h4 className="text-3xl font-black text-indigo-950">{t("evaluationRules")}</h4>
                 <p className="text-2xl text-slate-800 leading-relaxed font-bold">
-                  {t("instruction6")}
+                  {t("instruction6", { count: testData.totalAttempts })}
                 </p>
                 <p className="text-xl text-slate-600 leading-relaxed font-medium">
-                  {t("finalScoreDescription")}
+                  {t("finalScoreDescription", { count: testData.totalAttempts, maxScore: testData.totalAttempts * 100 })}
                 </p>
               </div>
             </CardContent>
@@ -84,7 +86,7 @@ export default function InstructionsScreen() {
                   className="w-full h-full object-contain"
                   preload="metadata"
                 >
-                  <source src="/video/tutorial.mp4" type="video/mp4" />
+                  <source src="/video/cmr-plant-layout-tutorial.mp4" type="video/mp4" />
                 </video>
               </div>
             </CardContent>
