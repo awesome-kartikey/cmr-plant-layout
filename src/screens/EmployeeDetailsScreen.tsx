@@ -2,13 +2,20 @@ import { useNavigate } from "react-router-dom"
 import { useTranslation } from "react-i18next"
 import { LayoutShell } from "../components/shared/LayoutShell"
 import { EmployeeForm } from "../components/shared/EmployeeForm"
+import { useTest } from "../contexts/TestContext"
 
 export default function EmployeeDetailsScreen() {
   const navigate = useNavigate()
   const { t } = useTranslation()
 
+  const { testData } = useTest()
+
   const handleSubmit = () => {
-    navigate("/training")
+    if (testData.attempts.length > 0) {
+      navigate("/result")
+    } else {
+      navigate("/training")
+    }
   }
 
   return (

@@ -368,6 +368,10 @@ export default function TrainingScreen() {
     }
 
     setPhase("evaluated")
+    setShowAssemblyReached(true)
+    setTimeout(() => {
+      setShowAssemblyReached(false)
+    }, 2500)
 
     addAttempt({
       hazard: hazardNode,
@@ -650,8 +654,8 @@ export default function TrainingScreen() {
             tutorialKey={tutorialKey}
           />
 
-          {/* ── Tutorial: Assembly Reached Toast Overlay ── */}
-          {phase === "tutorial" && showAssemblyReached && (
+          {/* ── Assembly Reached Toast Overlay ── */}
+          {(phase === "tutorial" || phase === "evaluated") && showAssemblyReached && (
             <div className="absolute inset-0 z-40 flex items-center justify-center pointer-events-none">
               <div
                 className="flex items-center gap-4 px-8 py-5 rounded-2xl shadow-2xl border pointer-events-none"
@@ -707,7 +711,7 @@ export default function TrainingScreen() {
 
           
           {/* ── Evaluated Result Modal ── */}
-          {phase === "evaluated" && (
+          {phase === "evaluated" && !showAssemblyReached && (
             <div className="absolute inset-0 z-30 flex items-center justify-center bg-slate-900/50 rounded-xl backdrop-blur-sm animate-in fade-in duration-300 p-4">
               <div className="rounded-3xl border border-slate-100 bg-white shadow-2xl max-w-sm w-full animate-in zoom-in-95 duration-400 overflow-hidden">
                 {/* Score header gradient strip */}
