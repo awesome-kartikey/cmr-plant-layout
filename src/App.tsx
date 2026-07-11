@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom"
+import { HashRouter, Routes, Route, Navigate } from "react-router-dom"
 import { AuthProvider } from "./contexts/AuthContext"
 import { TestProvider } from "./contexts/TestContext"
 import { Toaster } from "./components/ui/sonner"
@@ -14,7 +14,7 @@ import ResultScreen from "./screens/ResultScreen"
 
 export default function App() {
   return (
-    <BrowserRouter>
+    <HashRouter>
       <AuthProvider>
         <TestProvider>
           <Routes>
@@ -32,6 +32,6 @@ export default function App() {
           <Toaster />
         </TestProvider>
       </AuthProvider>
-    </BrowserRouter>
+    </HashRouter>
   )
 }
