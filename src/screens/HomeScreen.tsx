@@ -10,6 +10,7 @@ import { Input } from "../components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../components/ui/card"
 import { Badge } from "../components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "../components/ui/dialog"
+import { toast } from "sonner"
 import { generateCertificate, shareCertificate } from "../lib/certificate"
 import { Users, Award, ShieldAlert, CheckCircle2, ChevronRight, FileDown, Search, ArrowRight, Activity, Calendar, Download } from "lucide-react"
 
@@ -68,6 +69,7 @@ export default function HomeScreen() {
       setFiltered(items)
     } catch (err) {
       console.error(err)
+      toast.error("Failed to load results. Please check your connection.")
     } finally {
       setLoading(false)
     }

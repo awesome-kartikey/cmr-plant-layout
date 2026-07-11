@@ -11,6 +11,37 @@ export function ImageInput({ value, onChange }: ImageInputProps) {
   const fileRef = useRef<HTMLInputElement>(null)
   const [error, setError] = useState("")
 
+  const compressImage = (base64Str: string): Promise<string> => {
+    return new Promise((resolve) => {
+      const img = new Image()
+      img.src = base64Str
+      img.onload = () => {
+        const canvas = document.createElement("canvas")
+        const MAX_WIDTH = 500
+        const MAX_HEIGHT = 500
+        let width = img.width
+        let height = img.height
+
+        if (width > height) {
+          if (width > MAX_WIDTH) {
+            height *= MAX_WIDTH / width
+            width = MAX_WIDTH
+          }
+        } else {
+          if (height > MAX_HEIGHT) {
+            width *= MAX_HEIGHT / height
+            height = MAX_HEIGHT
+          }
+        }
+        canvas.width = width
+        canvas.height = height
+        const ctx = canvas.getContext("2d")
+        ctx?.drawImage(img, 0, 0, width, height)
+        resolve(canvas.toDataURL("image/jpeg", 0.7)) // 70% quality JPEG
+      }
+    })
+  }
+
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
@@ -21,9 +52,10 @@ export function ImageInput({ value, onChange }: ImageInputProps) {
     }
 
     const reader = new FileReader()
-    reader.onload = (ev) => {
+    reader.onload = async (ev) => {
       const result = ev.target?.result as string
-      onChange(result)
+      const compressed = await compressImage(result)
+      onChange(compressed)
       setError("")
     }
     reader.readAsDataURL(file)
@@ -34,12 +66,25 @@ export function ImageInput({ value, onChange }: ImageInputProps) {
       const { Camera } = await import("@capacitor/camera")
       const { CameraSource } = await import("@capacitor/camera/dist/esm/definitions")
       const image = await Camera.pickImages({
-        quality: 80,
+        quality: 70,
         limit: 1,
+        width: 500, // Capacitor camera handles downscaling if we pass these options
+        height: 500
       })
       if (image.photos.length > 0) {
-        onChange(image.photos[0].path || image.photos[0].webPath || "")
-        setError("")
+        // Capacitor might return a webPath that is already local or base64. 
+        // If it returns webPath, we can just use it, or fetch and compress it if it's too large.
+        // It's safer to just fetch it and run compressImage.
+        const res = await fetch(image.photos[0].webPath || image.photos[0].path || "")
+        const blob = await res.blob()
+        const reader = new FileReader()
+        reader.onload = async (ev) => {
+          const result = ev.target?.result as string
+          const compressed = await compressImage(result)
+          onChange(compressed)
+          setError("")
+        }
+        reader.readAsDataURL(blob)
       }
     } catch {
       fileRef.current?.click()

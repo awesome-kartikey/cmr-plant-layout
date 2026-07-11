@@ -12,7 +12,7 @@ import { Badge } from "../components/ui/badge"
 import { Separator } from "../components/ui/separator"
 import { toast } from "sonner"
 import { generateCertificate, shareCertificate } from "../lib/certificate"
-import { Trophy, FileDown, CheckCircle, RotateCcw, Home, Calendar, Timer, MoveRight, Flame, Target, Zap, AlertTriangle } from "lucide-react"
+import { Trophy, FileDown, CheckCircle, RotateCcw, Home, Calendar, MoveRight, Flame, Target, Zap, AlertTriangle } from "lucide-react"
 import { N } from "../lib/graph"
 
 function getGradeLabel(score: number, maxScore: number, t: any) {

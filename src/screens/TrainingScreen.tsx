@@ -22,6 +22,32 @@ const PHASE_CONFIG = {
   edit: { step: 0, color: "orange", icon: Crosshair, label: "Map Editor" },
 }
 
+function DrawTimer({ drawStartTime, phase, hasStartedDrawing }: { drawStartTime: number, phase: string, hasStartedDrawing: boolean }) {
+  const [elapsedTime, setElapsedTime] = useState(0)
+  
+  useEffect(() => {
+    let timer: any
+    if (phase === "path-draw" && hasStartedDrawing) {
+      timer = setInterval(() => {
+        setElapsedTime(Date.now() - drawStartTime)
+      }, 100)
+    } else {
+      setElapsedTime(0)
+    }
+    return () => clearInterval(timer)
+  }, [phase, hasStartedDrawing, drawStartTime])
+
+  const elapsedSec = (elapsedTime / 1000).toFixed(1)
+  const speedColor = elapsedTime < 6000 ? "text-emerald-400" : elapsedTime < 12000 ? "text-amber-400" : "text-red-400"
+
+  return (
+    <div className={`flex items-center gap-2 bg-slate-900 px-3 py-1.5 rounded-xl font-mono text-xs font-bold shadow-inner border border-slate-700`}>
+      <Timer className={`h-3.5 w-3.5 animate-pulse ${speedColor}`} />
+      <span className={speedColor}>{elapsedSec}s</span>
+    </div>
+  )
+}
+
 export default function TrainingScreen() {
   const navigate = useNavigate()
   const { t } = useTranslation()
@@ -41,7 +67,6 @@ export default function TrainingScreen() {
   const [resultScore, setResultScore] = useState(0)
   const [resultBreakdown, setResultBreakdown] = useState<{ exit: number; path: number; speed: number } | null>(null)
   const [drawStartTime, setDrawStartTime] = useState<number>(0)
-  const [elapsedTime, setElapsedTime] = useState<number>(0)
 
   // Tutorial animation loop state
   const [showAssemblyReached, setShowAssemblyReached] = useState(false)
@@ -147,19 +172,8 @@ export default function TrainingScreen() {
     }
     if (phase !== "path-draw") {
       setHasStartedDrawing(false)
-      if (phase === "exit-select") setElapsedTime(0)
     }
   }, [drawnPath, phase, hasStartedDrawing])
-
-  useEffect(() => {
-    let timer: any
-    if (phase === "path-draw" && hasStartedDrawing) {
-      timer = setInterval(() => {
-        setElapsedTime(Date.now() - drawStartTime)
-      }, 100)
-    }
-    return () => clearInterval(timer)
-  }, [phase, hasStartedDrawing, drawStartTime])
 
   const pickNewHazard = (mode: "practice" | "exam") => {
     const room = ROOMS[Math.floor(Math.random() * ROOMS.length)]
@@ -429,8 +443,6 @@ export default function TrainingScreen() {
   // Derived UI helpers
   const roomName = ROOMS.find(r => r.nodeId === hazardNode)?.name || "Emergency"
   const attemptNum = Math.min(testData.attempts.length + 1, testData.totalAttempts)
-  const elapsedSec = (elapsedTime / 1000).toFixed(1)
-  const speedColor = elapsedTime < 10000 ? "text-emerald-400" : elapsedTime < 15000 ? "text-amber-400" : "text-red-400"
   const isLastAttempt = testData.attempts.length >= testData.totalAttempts
 
   const scoreColor = resultScore >= 90 ? "text-emerald-500" : resultScore >= 70 ? "text-indigo-500" : resultScore >= 40 ? "text-amber-500" : "text-red-500"
@@ -555,10 +567,7 @@ export default function TrainingScreen() {
             {/* Path Draw: Timer + controls */}
             {phase === "path-draw" && (
               <>
-                <div className={`flex items-center gap-2 bg-slate-900 px-3 py-1.5 rounded-xl font-mono text-xs font-bold shadow-inner border border-slate-700`}>
-                  <Timer className={`h-3.5 w-3.5 animate-pulse ${speedColor}`} />
-                  <span className={speedColor}>{elapsedSec}s</span>
-                </div>
+                <DrawTimer drawStartTime={drawStartTime} phase={phase} hasStartedDrawing={hasStartedDrawing} />
                 <Button
                   variant="outline"
                   size="sm"

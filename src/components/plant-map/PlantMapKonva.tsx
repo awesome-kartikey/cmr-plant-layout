@@ -155,6 +155,7 @@ export function PlantMapKonva({
 
   const getNodeOpacity = (nodeKey: string) => {
     const n = nodes[nodeKey]
+    if (!n) return 0
     if (editLayer === "hazard" && !n.room) return 0.25
     return 1
   }
@@ -590,8 +591,22 @@ export function PlantMapKonva({
             onPointerLeave={onPointerUp}
           >
             <Layer>
-
-
+              {edges.map((edge, i) => {
+                const n1 = nodes[edge[0]]
+                const n2 = nodes[edge[1]]
+                if (!n1 || !n2) return null
+                return (
+                  <Line
+                    key={`edge-${i}`}
+                    points={[n1.x, n1.y, n2.x, n2.y]}
+                    stroke={phase === "edit" ? "#cbd5e1" : "transparent"}
+                    strokeWidth={phase === "edit" ? 2 : 0}
+                    dash={[5, 5]}
+                    hitStrokeWidth={0}
+                    listening={false}
+                  />
+                )
+              })}
 
               {/* Render Grid Blocks */}
               {((phase === "edit" && editLayer === "path") || isWizard) && pathBlocks.map((b, idx) => (
