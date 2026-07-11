@@ -465,40 +465,14 @@ export default function TrainingScreen() {
           {/* Left: Step indicators + title */}
           <div className="flex flex-wrap items-center gap-4">
             
-            {/* Step Pills */}
-            {phase !== "idle" && phase !== "edit" && (
-              <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-100 rounded-xl px-3 py-2">
-                {[
-                  { n: 1, active: phase === "hazard-confirm" || phase === "tutorial", done: phase === "exit-select" || phase === "path-draw" || phase === "evaluated", color: "red" },
-                  { n: 2, active: phase === "exit-select", done: phase === "path-draw" || phase === "evaluated", color: "emerald" },
-                  { n: 3, active: phase === "path-draw", done: phase === "evaluated", color: "sky" },
-                ].map((s, i) => (
-                  <div key={s.n} className="flex items-center gap-1.5">
-                    {i > 0 && <div className={`w-5 h-px ${s.done || s.active ? "bg-slate-300" : "bg-slate-200"}`} />}
-                    <div className={`flex items-center justify-center w-7 h-7 rounded-full text-xs font-black transition-all duration-300 ${
-                      s.done
-                        ? s.color === "red" ? "bg-red-100 text-red-500" : s.color === "emerald" ? "bg-emerald-100 text-emerald-600" : "bg-sky-100 text-sky-600"
-                        : s.active
-                        ? s.color === "red" ? "bg-red-500 text-white shadow-md shadow-red-500/30 animate-pulse" : s.color === "emerald" ? "bg-emerald-500 text-white shadow-md shadow-emerald-500/30 animate-pulse" : "bg-sky-500 text-white shadow-md shadow-sky-500/30 animate-pulse"
-                        : "bg-slate-200 text-slate-400"
-                    }`}>
-                      {s.done ? "✓" : s.n}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            <div className="h-8 w-px bg-slate-200 hidden md:block" />
-
             {/* Title + subtitle */}
-            <div>
-              <h3 className="font-extrabold text-slate-800 text-sm tracking-tight flex items-center gap-1.5">
-                {isWizard && <span className="text-indigo-600 bg-indigo-50 border border-indigo-100 rounded-lg px-2 py-0.5 text-[10px] font-black uppercase tracking-wider mr-1">WIZARD {wizardIndex + 1}/{ROOMS.length}</span>}
+            <div className="bg-indigo-50/80 border border-indigo-100 rounded-xl px-5 py-3 shadow-sm">
+              <h3 className="font-black text-indigo-900 text-lg tracking-tight flex items-center gap-2">
+                {isWizard && <span className="text-white bg-indigo-600 rounded-lg px-2.5 py-1 text-xs font-black uppercase tracking-wider mr-1 shadow-sm">WIZARD {wizardIndex + 1}/{ROOMS.length}</span>}
                 {gameMode === "exam" && phase !== "evaluated" && phase !== "idle" && (
-                  <span className="text-rose-600 bg-rose-50 border border-rose-100 rounded-lg px-2 py-0.5 text-[10px] font-black uppercase tracking-wider mr-1">EXAM</span>
+                  <span className="text-white bg-rose-600 rounded-lg px-2.5 py-1 text-xs font-black uppercase tracking-wider mr-1 shadow-sm">EXAM</span>
                 )}
-                {phase === "idle" && <span className="text-slate-500">Select a mode to begin</span>}
+                {phase === "idle" && <span className="text-slate-600">Select a mode to begin</span>}
                 {phase === "tutorial" && `Tutorial: ${roomName}`}
                 {phase === "hazard-confirm" && t("step1Title")}
                 {phase === "exit-select" && (isWizard ? `Select Rank ${wizardExitRank} Nearest Exit` : t("step2Title"))}
@@ -506,7 +480,7 @@ export default function TrainingScreen() {
                 {phase === "evaluated" && t("evaluatedTitle")}
                 {phase === "edit" && "Map Editor"}
               </h3>
-              <p className="text-xs text-slate-500 font-medium mt-0.5">
+              <p className="text-sm text-indigo-700/80 font-bold mt-1">
                 {phase === "idle" && "Practice to prepare, or take the Exam to be scored."}
                 {phase === "tutorial" && "Observe the ideal evacuation route, then proceed."}
                 {phase === "hazard-confirm" && t("step1Desc")}
@@ -547,19 +521,19 @@ export default function TrainingScreen() {
               <>
                 <Button
                   variant="outline"
-                  size="sm"
+                  size="lg"
                   onClick={() => { setGameMode("exam"); pickNewHazard("exam"); }}
-                  className="h-9 px-4 border-slate-200 hover:bg-slate-50 font-bold rounded-xl text-xs flex items-center gap-2 shadow-sm text-slate-600 transition-all hover:scale-105"
+                  className="h-12 px-6 border-2 border-slate-300 hover:bg-slate-100 hover:text-slate-800 font-black rounded-xl text-base flex items-center gap-2 shadow-sm text-slate-600 transition-all hover:scale-105"
                 >
                   Skip Training
                 </Button>
                 <Button
                   variant="default"
-                  size="sm"
+                  size="lg"
                   onClick={() => setPhase("hazard-confirm")}
-                  className="h-9 px-5 bg-sky-600 hover:bg-sky-500 text-white font-bold rounded-xl text-xs flex items-center gap-2 shadow-md shadow-sky-600/20 transition-all hover:scale-105"
+                  className="h-12 px-8 bg-sky-600 hover:bg-sky-500 text-white font-black rounded-xl text-base flex items-center gap-2 shadow-lg shadow-sky-600/30 transition-all hover:scale-105 hover:-translate-y-0.5"
                 >
-                  I understand <ChevronRight className="h-3.5 w-3.5" />
+                  I understand <ChevronRight className="h-5 w-5" />
                 </Button>
               </>
             )}

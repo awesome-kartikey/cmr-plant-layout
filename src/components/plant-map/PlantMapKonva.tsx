@@ -5,6 +5,7 @@ import { getGridKey, type GridBlock, findShortestGridPath } from "../../lib/grap
 import { N as initialN, EDGES as initialEdges, INITIAL_COLLISION_ZONES as initialCollisionZones, EXIT_ZONES as initialExitZones, PATH_BLOCKS as initialPathBlocks, buildGraph, projOnSeg, ptDist, EXITS, DEFAULT_GRAPH } from "../../lib/graph"
 import type { Point, Segment, GraphNodes, EdgeDef, NodeDef } from "../../lib/graph"
 import { FireEffect } from "./FireEffect"
+import { toast } from "sonner"
 
 interface PlantMapProps {
   phase: "idle" | "tutorial" | "hazard-confirm" | "exit-select" | "path-draw" | "evaluated" | "edit"
@@ -377,12 +378,12 @@ export function PlantMapKonva({
           const selectedExitNode = selectedExit ? nodes[selectedExit] : undefined;
           // Ensure they drew a path from the selected exit, and it has some length
           if (firstPoint && selectedExitNode && ptDist(firstPoint, selectedExitNode) > 100) {
-            alert("Please start drawing your path from the Exit Gate you selected!");
+            toast.error("Please start drawing your path from the Exit Gate you selected!", { position: "top-center" });
             setDrawnPath?.([]);
             return;
           }
           if (drawnPath.length < 5) {
-            alert("Path is too short. Please trace the actual route.");
+            toast.error("Path is too short. Please trace the actual route.", { position: "top-center" });
             setDrawnPath?.([]);
             return;
           }

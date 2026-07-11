@@ -54,7 +54,7 @@ export function EmployeeForm({ onSubmit }: EmployeeFormProps) {
                   placeholder={t("employeeNamePlaceholder")}
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  className="h-14 text-lg px-4 bg-slate-50 border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-400 transition-all"
+                  className="h-16 text-2xl px-6 bg-slate-50 border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-400 transition-all"
                 />
               </div>
 
@@ -68,7 +68,7 @@ export function EmployeeForm({ onSubmit }: EmployeeFormProps) {
                   placeholder={t("employeeCodePlaceholder")}
                   value={code}
                   onChange={(e) => setCode(e.target.value)}
-                  className="h-14 text-lg px-4 bg-slate-50 border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-400 transition-all"
+                  className="h-16 text-2xl px-6 bg-slate-50 border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-400 transition-all"
                 />
               </div>
 
@@ -85,7 +85,7 @@ export function EmployeeForm({ onSubmit }: EmployeeFormProps) {
               {/* Continue Button */}
               <Button
                 size="lg"
-                className="w-full bg-indigo-600 hover:bg-indigo-500 text-white cursor-pointer py-7 text-lg rounded-xl font-bold shadow-lg shadow-indigo-600/25 transition-all hover:shadow-indigo-500/40 hover:-translate-y-0.5"
+                className="w-full bg-indigo-600 hover:bg-indigo-500 text-white cursor-pointer py-8 text-2xl rounded-xl font-black shadow-lg shadow-indigo-600/25 transition-all hover:shadow-indigo-500/40 hover:-translate-y-0.5"
                 onClick={handleSubmit}
               >
                 {t("continueButton")}

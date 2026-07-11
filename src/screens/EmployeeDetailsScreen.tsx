@@ -13,7 +13,7 @@ export default function EmployeeDetailsScreen() {
 
   return (
     <LayoutShell>
-      <div className="max-w-5xl mx-auto w-full px-4 md:px-8 space-y-6">
+      <div className="max-w-7xl mx-auto w-full px-4 md:px-8 space-y-10 py-10">
         <h1 className="text-4xl font-black text-indigo-700">
           {t("employeeDetailsTitle")}
         </h1>
