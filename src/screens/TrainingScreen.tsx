@@ -60,6 +60,25 @@ export default function TrainingScreen() {
   const [drawnPath, setDrawnPath] = useState<Point[]>([])
   const [hasStartedDrawing, setHasStartedDrawing] = useState(false)
   const [tutorialPath, setTutorialPath] = useState<Point[]>([])
+  const [practiceAttemptCount, setPracticeAttemptCount] = useState(0)
+  const [examCountdown, setExamCountdown] = useState<number | null>(null)
+
+  const startExamTransition = () => {
+    setExamCountdown(3)
+  }
+
+  useEffect(() => {
+    if (examCountdown === null) return
+    if (examCountdown > 0) {
+      const timer = setTimeout(() => setExamCountdown(examCountdown - 1), 1000)
+      return () => clearTimeout(timer)
+    } else {
+      resetTest()
+      setGameMode("exam")
+      pickNewHazard("exam")
+      setExamCountdown(null)
+    }
+  }, [examCountdown])
   
   // Scoring / Details
   const [resultTitle, setResultTitle] = useState("")
@@ -373,19 +392,23 @@ export default function TrainingScreen() {
       setShowAssemblyReached(false)
     }, 2500)
 
-    addAttempt({
-      hazard: hazardNode,
-      nearestExit: isNearest ? "Nearest Gate" : "Further Gate",
-      selectedExit,
-      points: totalAttemptScore,
-      pathDrawn: finalPath,
-      pathScore: {
-        score: totalAttemptScore,
-        deviation,
-        time: duration,
-        accuracy
-      }
-    })
+    if (gameMode === "exam") {
+      addAttempt({
+        hazard: hazardNode,
+        nearestExit: isNearest ? "Nearest Gate" : "Further Gate",
+        selectedExit,
+        points: totalAttemptScore,
+        pathDrawn: finalPath,
+        pathScore: {
+          score: totalAttemptScore,
+          deviation,
+          time: duration,
+          accuracy
+        }
+      })
+    } else {
+      setPracticeAttemptCount(prev => prev + 1)
+    }
   }
 
   const handleUndo = () => {
@@ -449,6 +472,11 @@ export default function TrainingScreen() {
   const attemptNum = Math.min(testData.attempts.length + 1, testData.totalAttempts)
   const isLastAttempt = testData.attempts.length >= testData.totalAttempts
 
+  const isExam = gameMode === "exam";
+  const hudBg = isExam ? "bg-rose-50/80 border-rose-100" : "bg-sky-50/80 border-sky-100";
+  const hudTitleColor = isExam ? "text-rose-900" : "text-sky-900";
+  const hudDescColor = isExam ? "text-rose-700/80" : "text-sky-700/80";
+
   const scoreColor = resultScore >= 90 ? "text-emerald-500" : resultScore >= 70 ? "text-indigo-500" : resultScore >= 40 ? "text-amber-500" : "text-red-500"
   const scoreGradient = resultScore >= 90
     ? "from-emerald-500 to-teal-600"
@@ -470,11 +498,14 @@ export default function TrainingScreen() {
           <div className="flex flex-wrap items-center gap-4">
             
             {/* Title + subtitle */}
-            <div className="bg-indigo-50/80 border border-indigo-100 rounded-xl px-5 py-3 shadow-sm">
-              <h3 className="font-black text-indigo-900 text-lg tracking-tight flex items-center gap-2">
+            <div className={`${hudBg} border rounded-xl px-5 py-3 shadow-sm`}>
+              <h3 className={`font-black ${hudTitleColor} text-lg tracking-tight flex items-center gap-2`}>
                 {isWizard && <span className="text-white bg-indigo-600 rounded-lg px-2.5 py-1 text-xs font-black uppercase tracking-wider mr-1 shadow-sm">WIZARD {wizardIndex + 1}/{ROOMS.length}</span>}
                 {gameMode === "exam" && phase !== "evaluated" && phase !== "idle" && (
                   <span className="text-white bg-rose-600 rounded-lg px-2.5 py-1 text-xs font-black uppercase tracking-wider mr-1 shadow-sm">EXAM</span>
+                )}
+                {gameMode === "practice" && phase !== "evaluated" && phase !== "idle" && (
+                  <span className="text-white bg-sky-600 rounded-lg px-2.5 py-1 text-xs font-black uppercase tracking-wider mr-1 shadow-sm">PRACTICE</span>
                 )}
                 {phase === "idle" && <span className="text-slate-600">Select a mode to begin</span>}
                 {phase === "tutorial" && `Tutorial: ${roomName}`}
@@ -484,7 +515,7 @@ export default function TrainingScreen() {
                 {phase === "evaluated" && t("evaluatedTitle")}
                 {phase === "edit" && "Map Editor"}
               </h3>
-              <p className="text-sm text-indigo-700/80 font-bold mt-1">
+              <p className={`text-sm ${hudDescColor} font-bold mt-1`}>
                 {phase === "idle" && "Practice to prepare, or take the Exam to be scored."}
                 {phase === "tutorial" && "Observe the ideal evacuation route, then proceed."}
                 {phase === "hazard-confirm" && t("step1Desc")}
@@ -526,7 +557,7 @@ export default function TrainingScreen() {
                 <Button
                   variant="outline"
                   size="lg"
-                  onClick={() => { setGameMode("exam"); pickNewHazard("exam"); }}
+                  onClick={startExamTransition}
                   className="h-12 px-6 border-2 border-slate-300 hover:bg-slate-100 hover:text-slate-800 font-black rounded-xl text-base flex items-center gap-2 shadow-sm text-slate-600 transition-all hover:scale-105"
                 >
                   Skip Training
@@ -580,11 +611,17 @@ export default function TrainingScreen() {
             {/* Attempt counter */}
             {phase !== "idle" && phase !== "edit" && (
               <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-100 rounded-xl px-2.5 py-1.5">
-                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{t("attempts")}</span>
+                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                  {gameMode === "exam" ? t("attempts") : "Practice Attempt"}
+                </span>
                 <span className="text-sm font-black text-slate-700 font-mono leading-none flex items-baseline tracking-tighter">
-                  {attemptNum}
-                  <span className="text-xs text-slate-400 font-bold mx-0.5">/</span>
-                  <span className="text-[11px] text-slate-400">{testData.totalAttempts}</span>
+                  {gameMode === "exam" ? attemptNum : practiceAttemptCount + 1}
+                  {gameMode === "exam" && (
+                    <>
+                      <span className="text-xs text-slate-400 font-bold mx-0.5">/</span>
+                      <span className="text-[11px] text-slate-400">{testData.totalAttempts}</span>
+                    </>
+                  )}
                 </span>
               </div>
             )}
@@ -741,16 +778,52 @@ export default function TrainingScreen() {
                   
                   <p className="text-xs text-slate-500 leading-relaxed font-medium mb-5 text-center">{resultMsg}</p>
                   
-                  <button
-                    onClick={handleNextRound}
-                    className={`rounded-xl bg-gradient-to-r ${scoreGradient} px-8 py-3.5 text-sm font-bold text-white w-full transition-all hover:opacity-90 hover:scale-[1.02] shadow-md cursor-pointer flex items-center justify-center gap-2`}
-                  >
-                    {isLastAttempt ? (
-                      <><Trophy className="h-4 w-4" /> {t("viewFinalScore")}</>
-                    ) : (
-                      <>{t("continueButton")} <ChevronRight className="h-4 w-4" /></>
-                    )}
-                  </button>
+                  {gameMode === "exam" ? (
+                    <button
+                      onClick={handleNextRound}
+                      className={`rounded-xl bg-gradient-to-r ${scoreGradient} px-8 py-3.5 text-sm font-bold text-white w-full transition-all hover:opacity-90 hover:scale-[1.02] shadow-md cursor-pointer flex items-center justify-center gap-2`}
+                    >
+                      {isLastAttempt ? (
+                        <><Trophy className="h-4 w-4" /> {t("viewFinalScore")}</>
+                      ) : (
+                        <>{t("continueButton")} <ChevronRight className="h-4 w-4" /></>
+                      )}
+                    </button>
+                  ) : (
+                    <div className="flex flex-col gap-2">
+                      <button
+                        onClick={startExamTransition}
+                        className="rounded-xl bg-gradient-to-r from-rose-500 to-red-600 px-8 py-3.5 text-sm font-bold text-white w-full transition-all hover:opacity-90 hover:scale-[1.02] shadow-md cursor-pointer flex items-center justify-center gap-2"
+                      >
+                        Start Exam Now <ClipboardCheck className="h-4 w-4" />
+                      </button>
+                      <button
+                        onClick={handleNextRound}
+                        className="rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 px-8 py-3.5 text-sm font-bold w-full transition-all cursor-pointer flex items-center justify-center gap-2"
+                      >
+                        Try Another Practice <RotateCcw className="h-4 w-4" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+          {/* ── Exam Countdown Overlay ── */}
+          {examCountdown !== null && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-md">
+              <div className="text-center animate-in zoom-in duration-300">
+                <h2 className="text-5xl font-black text-white mb-6 tracking-tight drop-shadow-lg">
+                  Transitioning to Exam Mode
+                </h2>
+                <div className="text-9xl font-black text-rose-500 mb-8 animate-pulse drop-shadow-[0_0_30px_rgba(244,63,94,0.5)]">
+                  {examCountdown > 0 ? examCountdown : "GO!"}
+                </div>
+                <div className="bg-white/10 rounded-2xl p-6 backdrop-blur-sm border border-white/20 max-w-md mx-auto">
+                  <p className="text-white/90 text-lg font-medium flex items-center gap-3">
+                    <AlertTriangle className="h-6 w-6 text-amber-400 shrink-0" />
+                    No hints will be shown. Attempts will be fully scored. Good luck!
+                  </p>
                 </div>
               </div>
             </div>
