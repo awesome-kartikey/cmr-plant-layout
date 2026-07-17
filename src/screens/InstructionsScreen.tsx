@@ -86,7 +86,7 @@ export default function InstructionsScreen() {
                   className="w-full h-full object-contain"
                   preload="metadata"
                 >
-                  <source src="/video/cmr-plant-layout-tutorial.mp4" type="video/mp4" />
+                  <source src="/video/cmr-plant-layout-tutorial-with-audio.mp4" type="video/mp4" />
                 </video>
               </div>
             </CardContent>
