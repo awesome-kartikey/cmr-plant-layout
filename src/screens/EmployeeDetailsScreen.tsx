@@ -19,13 +19,21 @@ export default function EmployeeDetailsScreen() {
   }
 
   return (
-    <LayoutShell>
-      <div className="max-w-7xl mx-auto w-full px-4 md:px-8 space-y-10 py-10">
-        <h1 className="text-4xl font-black text-indigo-700">
-          {t("employeeDetailsTitle")}
-        </h1>
-        <p className="text-lg text-gray-500 font-medium">{t("employeeDetailsSubtitle")}</p>
-        <EmployeeForm onSubmit={handleSubmit} />
+    <LayoutShell noScroll>
+      <div className="flex flex-col h-full mx-auto w-full max-w-6xl">
+        <div className="mb-4 sm:mb-6 shrink-0">
+          <h1 className="text-2xl sm:text-3xl font-black text-indigo-700">
+            {t("employeeDetailsTitle")}
+          </h1>
+          <p className="text-sm sm:text-base text-slate-500 font-medium mt-1">
+            {t("employeeDetailsSubtitle")}
+          </p>
+        </div>
+        
+        {/* The form container takes the remaining vertical space */}
+        <div className="flex-1 min-h-0 flex flex-col justify-center">
+          <EmployeeForm onSubmit={handleSubmit} />
+        </div>
       </div>
     </LayoutShell>
   )
