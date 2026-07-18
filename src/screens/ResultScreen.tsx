@@ -89,9 +89,18 @@ export default function ResultScreen() {
 
       let photoUrl = employeeData.photoUrl ?? null
       if (!photoUrl && employeeData.photo) {
-        const storageRef = ref(storage, `employees/${employeeCode}/profile.jpg`)
-        await uploadString(storageRef, employeeData.photo, "data_url")
-        photoUrl = await getDownloadURL(storageRef)
+        try {
+          // Attempt to upload to Firebase Storage (Requires active internet connection)
+          const storageRef = ref(storage, `employees/${employeeCode}/profile.jpg`)
+          await uploadString(storageRef, employeeData.photo, "data_url")
+          photoUrl = await getDownloadURL(storageRef)
+        } catch (uploadError) {
+          console.warn("Storage upload failed (likely offline). Falling back to base64 string in Firestore.", uploadError)
+          // Fallback: If offline, Firebase Storage fails immediately. 
+          // We can fallback to storing the compressed base64 string directly in Firestore.
+          // Since Firestore has offline persistence enabled, it will queue this write and sync it when back online!
+          photoUrl = employeeData.photo 
+        }
       }
 
       await setDoc(employeeRef, {
