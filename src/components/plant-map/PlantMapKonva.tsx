@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from "react"
+import { useState, useRef, useCallback, useEffect, useMemo } from "react"
 import { Stage, Layer, Rect, Circle, Line, Group, Text, Path } from "react-konva"
 import { Html } from "react-konva-utils"
 import { getGridKey, type GridBlock, findShortestGridPath } from "../../lib/graph"
@@ -49,6 +49,117 @@ export function PlantMapKonva({
   const containerRef = useRef<HTMLDivElement>(null)
   const stageRef = useRef<any>(null)
   const [dimensions, setDimensions] = useState({ width: 1000, height: 600 })
+
+  // --- High-Performance Progressive Tutorial Path Drawing Animation Loop ---
+  const [animProgress, setAnimProgress] = useState(0)
+  const [animOpacity, setAnimOpacity] = useState(1)
+
+  useEffect(() => {
+    if (phase !== "tutorial" || !tutorialPath || tutorialPath.length < 2) {
+      setAnimProgress(0)
+      setAnimOpacity(1)
+      return
+    }
+
+    let isCancelled = false
+    let animFrame: number
+    let timeoutId1: any
+    let timeoutId2: any
+
+    let tutDist = 0
+    for (let i = 0; i < tutorialPath.length - 1; i++) {
+      tutDist += ptDist(tutorialPath[i], tutorialPath[i + 1])
+    }
+    const drawDurationMs = Math.max(1600, (tutDist / 380) * 1000)
+    const holdMs = 2400
+    const fadeMs = 280
+
+    const startDrawCycle = () => {
+      if (isCancelled) return
+      setAnimProgress(0)
+      setAnimOpacity(1)
+
+      let startTime: number | null = null
+
+      const step = (timestamp: number) => {
+        if (isCancelled) return
+        if (!startTime) startTime = timestamp
+        const elapsed = timestamp - startTime
+        const rawProgress = Math.min(1, elapsed / drawDurationMs)
+
+        // Smooth easeInOutCubic
+        const eased = rawProgress < 0.5
+          ? 4 * rawProgress * rawProgress * rawProgress
+          : 1 - Math.pow(-2 * rawProgress + 2, 3) / 2
+
+        setAnimProgress(eased)
+
+        if (rawProgress < 1) {
+          animFrame = requestAnimationFrame(step)
+        } else {
+          // Reached Assembly Area: hold for holdMs, then fade out and restart
+          timeoutId1 = setTimeout(() => {
+            if (isCancelled) return
+            setAnimOpacity(0)
+            timeoutId2 = setTimeout(() => {
+              if (isCancelled) return
+              startDrawCycle()
+            }, fadeMs)
+          }, holdMs)
+        }
+      }
+
+      animFrame = requestAnimationFrame(step)
+    }
+
+    startDrawCycle()
+
+    return () => {
+      isCancelled = true
+      cancelAnimationFrame(animFrame)
+      clearTimeout(timeoutId1)
+      clearTimeout(timeoutId2)
+    }
+  }, [phase, tutorialPath])
+
+  // Interpolated sub-path based on current animation progress
+  const animatedTutorialPoints = useMemo(() => {
+    if (!tutorialPath || tutorialPath.length === 0) return []
+    if (tutorialPath.length === 1 || animProgress <= 0) return [tutorialPath[0]]
+    if (animProgress >= 1) return tutorialPath
+
+    let totalDist = 0
+    const segLens: number[] = []
+    for (let i = 0; i < tutorialPath.length - 1; i++) {
+      const d = ptDist(tutorialPath[i], tutorialPath[i + 1])
+      segLens.push(d)
+      totalDist += d
+    }
+
+    const targetDist = animProgress * totalDist
+    let curDist = 0
+    const result: Point[] = [tutorialPath[0]]
+
+    for (let i = 0; i < segLens.length; i++) {
+      const len = segLens[i]
+      if (curDist + len < targetDist) {
+        result.push(tutorialPath[i + 1])
+        curDist += len
+      } else {
+        const rem = targetDist - curDist
+        const factor = len > 0 ? rem / len : 0
+        const p1 = tutorialPath[i]
+        const p2 = tutorialPath[i + 1]
+        result.push({
+          x: p1.x + (p2.x - p1.x) * factor,
+          y: p1.y + (p2.y - p1.y) * factor
+        })
+        break
+      }
+    }
+
+    return result
+  }, [tutorialPath, animProgress])
 
   useEffect(() => {
     if (!containerRef.current) return
@@ -591,8 +702,8 @@ export function PlantMapKonva({
             onPointerUp={onPointerUp}
             onPointerLeave={onPointerUp}
           >
-            <Layer>
-              {/* Dynamic Code-Driven Vector Map Base */}
+            {/* 1. Static Base Map Layer (Zero re-draws during animation) */}
+            <Layer id="base-map-layer" listening={false}>
               <DynamicPlantMapBase
                 phase={phase}
                 hazardNode={hazardNode}
@@ -600,6 +711,10 @@ export function PlantMapKonva({
                 isWizard={isWizard}
                 wizardSelectedExits={wizardSelectedExits}
               />
+            </Layer>
+
+            {/* 2. Interactive & Gameplay Elements Layer */}
+            <Layer id="interactive-layer">
               {edges.map((edge, i) => {
                 const n1 = nodes[edge[0]]
                 const n2 = nodes[edge[1]]
@@ -661,119 +776,122 @@ export function PlantMapKonva({
                   </Group>
                 )
               })}
-              {/* Render ACTIVE Wizard Drawn Path (Vector Line + Live Waypoints) */}
-              {isWizard && phase === "path-draw" && drawnPath && drawnPath.length > 0 && (() => {
-                const wizardRank = wizardSelectedExits.length;
-                const colors = [
-                  { stroke: "#10b981", glow: "rgba(16, 185, 129, 0.5)" }, // Green
-                  { stroke: "#f59e0b", glow: "rgba(245, 158, 11, 0.5)" }, // Orange
-                  { stroke: "#0ea5e9", glow: "rgba(14, 165, 233, 0.5)" }  // Blue
-                ]
-                const c = colors[wizardRank] || colors[0]
-                return (
-                  <Group key="active-wizard-path">
-                    {drawnPath.length > 1 && (
-                      <Line
-                        points={drawnPath.flatMap(p => [p.x, p.y])}
-                        stroke={c.stroke}
-                        strokeWidth={6}
-                        lineCap="round"
-                        lineJoin="round"
-                        shadowColor={c.stroke}
-                        shadowBlur={8}
-                        listening={false}
-                      />
-                    )}
-                    {drawnPath.map((b, idx) => (
-                      <Circle
-                        key={`active-wp-${idx}`}
-                        x={b.x}
-                        y={b.y}
-                        r={idx === 0 || idx === drawnPath.length - 1 ? 7 : 4}
-                        fill={idx === 0 ? "#EF4444" : idx === drawnPath.length - 1 ? "#10B981" : c.stroke}
-                        stroke="white"
-                        strokeWidth={2}
-                        listening={false}
-                      />
-                    ))}
-                  </Group>
-                )
-              })()}
 
-              {/* Render Graph Edges (Edit Mode Only) */}
-              {phase === "edit" && edges.map(([a, b], i) => {
-                if (!nodes[a] || !nodes[b]) return null
-                const isHazardEdge = nodes[a].room || nodes[b].room
-                if (editLayer === "path" && isHazardEdge) return null
-
-                let edgeOpacity = 0.4
-                if (editLayer === "hazard" && !isHazardEdge) edgeOpacity = 0.1
-
-                return <Line key={i} x1={nodes[a].x} y1={nodes[a].y} x2={nodes[b].x} y2={nodes[b].y} stroke={`rgba(255,255,255,${edgeOpacity})`} strokeWidth={3} />
-              })}
-
-              {/* Render Collision Zones */}
-              {phase === "edit" && collisionZones.map(zone => (
-                <Group key={zone.id}>
-                  <Rect
-                    x={zone.x} y={zone.y} width={zone.width} height={zone.height}
-                    fill={editLayer === "blocks" ? "rgba(239, 68, 68, 0.4)" : "rgba(239, 68, 68, 0.1)"}
-                    stroke={editLayer === "blocks" ? "#ef4444" : "none"}
-                    strokeWidth={2}
-                    className={editLayer === "blocks" ? (editTool === "drag" ? "cursor-move" : "pointer-events-auto") : "pointer-events-none"}
-                  />
-                  {editLayer === "blocks" && (
-                    <Rect
-                      x={zone.x + zone.width - 15} y={zone.y + zone.height - 15} width={15} height={15}
-                      fill="#ef4444"
-                      className={editTool === "drag" ? "cursor-se-resize" : "pointer-events-none"}
+              {/* Render Active Wizard Tracing Line + Waypoint Handles */}
+              {isWizard && phase === "path-draw" && drawnPath.length > 0 && (
+                <Group key="active-wizard-tracing">
+                  {drawnPath.length > 1 && (
+                    <Line
+                      points={drawnPath.flatMap(p => [p.x, p.y])}
+                      stroke="#059669"
+                      strokeWidth={5.5}
+                      lineCap="round"
+                      lineJoin="round"
+                      shadowColor="#059669"
+                      shadowBlur={8}
+                      listening={false}
                     />
                   )}
+                  {drawnPath.map((pt, idx) => {
+                    const isStart = idx === 0
+                    const isEnd = idx === drawnPath.length - 1
+                    return (
+                      <Group key={`wizard-pt-${idx}`}>
+                        <Circle
+                          x={pt.x}
+                          y={pt.y}
+                          r={isStart || isEnd ? 7 : 5}
+                          fill={isStart ? "#FDF4FF" : isEnd ? "#10B981" : "#FFFFFF"}
+                          stroke={isStart ? "#D946EF" : "#059669"}
+                          strokeWidth={2.5}
+                          shadowColor={isEnd ? "#10B981" : "#059669"}
+                          shadowBlur={6}
+                          listening={false}
+                        />
+                        {isStart && (
+                          <Circle
+                            x={pt.x}
+                            y={pt.y}
+                            r={12}
+                            stroke="#D946EF"
+                            strokeWidth={1}
+                            dash={[3, 3]}
+                            listening={false}
+                          />
+                        )}
+                      </Group>
+                    )
+                  })}
                 </Group>
-              ))}
+              )}
 
-              {/* Render Exit Zones */}
-              {(phase === "exit-select" || phase === "tutorial" || phase === "edit") && exitZones.map(zone => {
-                const isNearest = phase === "tutorial" && selectedExit === zone.targetNode;
-                const isAll = phase === "exit-select";
-                const shouldFlash = isNearest || isAll;
-                if (phase === "edit" && editLayer !== "exits") return null;
+              {/* Render Fire Hazard Effect */}
+              {hazardNode && nodes[hazardNode] && (
+                <Html
+                  groupProps={{
+                    x: nodes[hazardNode].x - 30,
+                    y: nodes[hazardNode].y - 30,
+                  }}
+                  divProps={{
+                    style: {
+                      pointerEvents: phase === "hazard-confirm" ? "auto" : "none",
+                      cursor: phase === "hazard-confirm" ? "pointer" : "default",
+                    },
+                  }}
+                >
+                  <div
+                    onClick={() => {
+                      if (phase === "hazard-confirm" && onHazardConfirmed) {
+                        onHazardConfirmed()
+                      }
+                    }}
+                  >
+                    <FireEffect size={60} />
+                  </div>
+                </Html>
+              )}
 
-                const zoneIdentifier = isWizard ? zone.id : zone.targetNode;
-                const wizardRank = isWizard ? wizardSelectedExits.indexOf(zone.id) : -1;
-                const isWizardSelected = wizardRank !== -1;
-                const colors = [
-                  { fill: "rgba(16, 185, 129, 0.6)", stroke: "#10b981" },
-                  { fill: "rgba(245, 158, 11, 0.6)", stroke: "#f59e0b" },
-                  { fill: "rgba(14, 165, 233, 0.6)", stroke: "#0ea5e9" }
-                ]
-                const activeColor = isWizardSelected ? (colors[wizardRank] || colors[0]) : { fill: "rgba(16, 185, 129, 0.3)", stroke: "#10b981" }
-
+              {/* Render Exit Click Zones */}
+              {exitZones.map((zone) => {
+                const isSelected = selectedExit === zone.id || selectedExit === zone.targetNode
+                const isWizardSelected = isWizard && wizardSelectedExits.includes(zone.id)
                 return (
                   <Group key={zone.id}>
-                    {shouldFlash && !isWizardSelected && phase === "exit-select" && (
-                      <Html
-                        groupProps={{ x: zone.x, y: zone.y }}
-                        divProps={{ style: { pointerEvents: 'none' } }}
-                      >
-                        <div className="relative" style={{ width: zone.width, height: zone.height }}>
-                          {/* Radial Glow Behind */}
-                          <div className="absolute inset-[-20px] bg-emerald-400/50 blur-xl rounded-full animate-pulse" style={{ animationDuration: '0.8s' }} />
-                          {/* White Flash Overlay Over the icon */}
-                          <div className="absolute inset-0 bg-white/40 animate-pulse rounded" style={{ animationDuration: '0.8s' }} />
-                        </div>
-                      </Html>
-                    )}
                     <Rect
-                      x={zone.x} y={zone.y} width={zone.width} height={zone.height}
-                      fill={editLayer === "exits" ? "rgba(16, 185, 129, 0.4)" : "transparent"}
-                      stroke={editLayer === "exits" ? "#10b981" : isWizardSelected ? activeColor.stroke : "none"}
-                      strokeWidth={isWizardSelected ? 4 : 2}
+                      x={zone.x}
+                      y={zone.y}
+                      width={zone.width}
+                      height={zone.height}
+                      fill="transparent"
+                      stroke={
+                        editLayer === "exits"
+                          ? "#10b981"
+                          : isSelected || isWizardSelected
+                            ? "#10b981"
+                            : phase === "exit-select"
+                              ? "#22c55e"
+                              : "transparent"
+                      }
+                      strokeWidth={isSelected || isWizardSelected ? 3 : phase === "exit-select" ? 2 : 1}
+                      dash={phase === "exit-select" ? [4, 4] : undefined}
+                      draggable={editLayer === "exits" && editTool === "drag"}
+                      onDragEnd={(e) => {
+                        const newExits = exitZones.map(z =>
+                          z.id === zone.id
+                            ? { ...z, x: Math.round(e.target.x()), y: Math.round(e.target.y()) }
+                            : z
+                        )
+                        setExitZones(newExits)
+                      }}
                       onClick={() => {
-                        if (phase === "exit-select" && onExitSelected && !isWizardSelected) onExitSelected(zoneIdentifier)
+                        if (phase === "exit-select" && !isWizardSelected && onExitSelected) {
+                          onExitSelected(zone.targetNode || zone.id)
+                        }
                       }}
                       onTap={() => {
-                        if (phase === "exit-select" && onExitSelected && !isWizardSelected) onExitSelected(zoneIdentifier)
+                        if (phase === "exit-select" && !isWizardSelected && onExitSelected) {
+                          onExitSelected(zone.targetNode || zone.id)
+                        }
                       }}
                       onMouseEnter={(e) => {
                         if (phase === "exit-select" && !isWizardSelected) {
@@ -788,39 +906,39 @@ export function PlantMapKonva({
                         }
                       }}
                     />
-                    {editLayer === "exits" && (
-                      <Rect
-                        x={zone.x + zone.width - 15} y={zone.y + zone.height - 15} width={15} height={15}
-                        fill="#10b981"
-                      />
-                    )}
                   </Group>
                 )
               })}
+            </Layer>
 
-              {/* Render Tutorial Animated Path natively on Konva Canvas Layer */}
-              {phase === "tutorial" && showTutorialPath && tutorialPath && tutorialPath.length > 0 && (
-                <Group key={`tut-path-${tutorialKey}`}>
+            {/* 3. Lightweight Tutorial Animation Layer (60-120 FPS High Performance) */}
+            <Layer id="tutorial-anim-layer" opacity={animOpacity} listening={false}>
+              {phase === "tutorial" && animatedTutorialPoints && animatedTutorialPoints.length > 0 && (
+                <Group key="tut-path-anim-group">
                   {/* Outer Ambient Glow */}
-                  <Line
-                    points={tutorialPath.flatMap(p => [p.x, p.y])}
-                    stroke="rgba(217, 70, 239, 0.4)"
-                    strokeWidth={14}
-                    lineCap="round"
-                    lineJoin="round"
-                    shadowColor="#D946EF"
-                    shadowBlur={12}
-                    listening={false}
-                  />
+                  {animatedTutorialPoints.length > 1 && (
+                    <Line
+                      points={animatedTutorialPoints.flatMap(p => [p.x, p.y])}
+                      stroke="rgba(217, 70, 239, 0.45)"
+                      strokeWidth={14}
+                      lineCap="round"
+                      lineJoin="round"
+                      shadowColor="#D946EF"
+                      shadowBlur={14}
+                      listening={false}
+                    />
+                  )}
                   {/* Core Neon Pink Line */}
-                  <Line
-                    points={tutorialPath.flatMap(p => [p.x, p.y])}
-                    stroke="#D946EF"
-                    strokeWidth={6}
-                    lineCap="round"
-                    lineJoin="round"
-                    listening={false}
-                  />
+                  {animatedTutorialPoints.length > 1 && (
+                    <Line
+                      points={animatedTutorialPoints.flatMap(p => [p.x, p.y])}
+                      stroke="#D946EF"
+                      strokeWidth={6.5}
+                      lineCap="round"
+                      lineJoin="round"
+                      listening={false}
+                    />
+                  )}
                   {/* Start Point Marker */}
                   <Circle
                     x={tutorialPath[0].x}
@@ -831,18 +949,46 @@ export function PlantMapKonva({
                     strokeWidth={3}
                     listening={false}
                   />
+                  {/* Leading Spark / Runner Head Cursor */}
+                  {animProgress > 0 && animProgress < 1 && animatedTutorialPoints.length > 0 && (() => {
+                    const leadPt = animatedTutorialPoints[animatedTutorialPoints.length - 1]
+                    return (
+                      <Group>
+                        <Circle
+                          x={leadPt.x}
+                          y={leadPt.y}
+                          r={14}
+                          fill="rgba(217, 70, 239, 0.3)"
+                          listening={false}
+                        />
+                        <Circle
+                          x={leadPt.x}
+                          y={leadPt.y}
+                          r={6}
+                          fill="#FFFFFF"
+                          stroke="#D946EF"
+                          strokeWidth={2}
+                          shadowColor="#D946EF"
+                          shadowBlur={8}
+                          listening={false}
+                        />
+                      </Group>
+                    )
+                  })()}
                   {/* End Point Marker (Assembly) */}
-                  <Circle
-                    x={tutorialPath[tutorialPath.length - 1].x}
-                    y={tutorialPath[tutorialPath.length - 1].y}
-                    r={8}
-                    fill="#FDF4FF"
-                    stroke="#10B981"
-                    strokeWidth={3}
-                    listening={false}
-                  />
+                  {animProgress >= 0.98 && tutorialPath.length > 0 && (
+                    <Circle
+                      x={tutorialPath[tutorialPath.length - 1].x}
+                      y={tutorialPath[tutorialPath.length - 1].y}
+                      r={8}
+                      fill="#FDF4FF"
+                      stroke="#10B981"
+                      strokeWidth={3}
+                      listening={false}
+                    />
+                  )}
                   {/* Assembly Area Pulse Effect */}
-                  {showAssemblyReached && (
+                  {animProgress >= 0.98 && (
                     <Circle
                       x={713}
                       y={568}
@@ -855,6 +1001,10 @@ export function PlantMapKonva({
                   )}
                 </Group>
               )}
+            </Layer>
+
+            {/* 4. Edit Mode & Interaction Nodes Layer */}
+            <Layer id="edit-nodes-layer">
 
               {/* Render Traced Neon Evacuation Path (Gameplay mode) */}
               {phase === "path-draw" && drawnPath && drawnPath.length > 0 && (

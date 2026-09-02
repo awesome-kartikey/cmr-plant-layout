@@ -141,50 +141,6 @@ export default function TrainingScreen() {
     pickNewHazard("practice")
   }, [])
 
-  // Tutorial animation loop: after path animates to assembly, show toast for 2.5s, hide, repeat
-  useEffect(() => {
-    if (phase !== "tutorial" || tutorialPath.length === 0) {
-      setShowAssemblyReached(false)
-      setShowTutorialPath(true)
-      if (tutorialLoopRef.current) clearTimeout(tutorialLoopRef.current)
-      return
-    }
-    let tutDist = 0
-    for (let i = 0; i < tutorialPath.length - 1; i++) {
-      tutDist += ptDist(tutorialPath[i], tutorialPath[i + 1])
-    }
-    const animMs = Math.max(2000, (tutDist / 400) * 1000)
-    const toastMs = 2800
-    const hideMs = 800
-
-    const runLoop = () => {
-      // 1. Path animates, toast & pulse hidden
-      setShowTutorialPath(true)
-      setShowAssemblyReached(false)
-      setTutorialKey(k => k + 1)
-
-      // 2. Once path reaches the end, hold path, show toast + pulse
-      tutorialLoopRef.current = setTimeout(() => {
-        setShowAssemblyReached(true)
-
-        // 3. Keep showing everything, then hide all at once
-        tutorialLoopRef.current = setTimeout(() => {
-          setShowTutorialPath(false)
-          setShowAssemblyReached(false)
-
-          // 4. Stay hidden for hideMs, then restart loop
-          tutorialLoopRef.current = setTimeout(() => {
-            runLoop()
-          }, hideMs)
-
-        }, toastMs)
-      }, animMs)
-    }
-
-    runLoop()
-    return () => { if (tutorialLoopRef.current) clearTimeout(tutorialLoopRef.current) }
-  }, [phase, tutorialPath])
-
   useEffect(() => {
     if (phase === "path-draw" && drawnPath.length > 0 && !hasStartedDrawing) {
       setHasStartedDrawing(true)
