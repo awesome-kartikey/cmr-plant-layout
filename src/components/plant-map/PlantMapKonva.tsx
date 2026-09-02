@@ -5,6 +5,7 @@ import { getGridKey, type GridBlock, findShortestGridPath } from "../../lib/grap
 import { N as initialN, EDGES as initialEdges, INITIAL_COLLISION_ZONES as initialCollisionZones, EXIT_ZONES as initialExitZones, PATH_BLOCKS as initialPathBlocks, buildGraph, projOnSeg, ptDist, EXITS, DEFAULT_GRAPH } from "../../lib/graph"
 import type { Point, Segment, GraphNodes, EdgeDef, NodeDef } from "../../lib/graph"
 import { FireEffect } from "./FireEffect"
+import { DynamicPlantMapBase } from "./DynamicPlantMapBase"
 import { toast } from "sonner"
 
 interface PlantMapProps {
@@ -171,12 +172,12 @@ export function PlantMapKonva({
     return best
   }
 
-  const checkCollision = (x: number, y: number) => {
+  const checkCollision = (x: number, y: number, buffer: number = 6) => {
     return collisionZones.some(zone =>
-      x >= zone.x &&
-      x <= zone.x + zone.width &&
-      y >= zone.y &&
-      y <= zone.y + zone.height
+      x >= (zone.x + buffer) &&
+      x <= (zone.x + zone.width - buffer) &&
+      y >= (zone.y + buffer) &&
+      y <= (zone.y + zone.height - buffer)
     )
   }
 
@@ -566,9 +567,9 @@ export function PlantMapKonva({
 
 
   return (
-    <div className="flex flex-row gap-4 w-full h-full justify-center items-start">
+    <div className="flex flex-row w-full h-full justify-center items-center overflow-hidden p-0">
       <div
-        className="relative w-full max-h-[80vh] max-w-[1000px] aspect-[1000/600] rounded-xl overflow-hidden shadow-2xl bg-[#0a0a16] border border-gray-800 select-none"
+        className="relative w-full h-full max-w-full max-h-full aspect-[1000/600] rounded-xl overflow-hidden shadow-sm bg-white border border-slate-200 select-none flex items-center justify-center"
         onContextMenu={(e) => {
           if (phase === "edit" && editTool === "trace") {
             e.preventDefault()
@@ -577,8 +578,6 @@ export function PlantMapKonva({
           }
         }}
       >
-        <img src="/map/cmr-emergency-plan-main.jpg" alt="Map" className="absolute inset-0 w-full h-full object-fill block pointer-events-none" />
-
         <div ref={containerRef} className="absolute inset-0 w-full h-full z-10 touch-none">
           <Stage
             ref={stageRef}
@@ -586,12 +585,21 @@ export function PlantMapKonva({
             height={dimensions.height}
             scaleX={scaleX}
             scaleY={scaleY}
+            pixelRatio={typeof window !== 'undefined' ? Math.max(window.devicePixelRatio || 1, 2) : 2}
             onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}
             onPointerUp={onPointerUp}
             onPointerLeave={onPointerUp}
           >
             <Layer>
+              {/* Dynamic Code-Driven Vector Map Base */}
+              <DynamicPlantMapBase
+                phase={phase}
+                hazardNode={hazardNode}
+                selectedExit={selectedExit}
+                isWizard={isWizard}
+                wizardSelectedExits={wizardSelectedExits}
+              />
               {edges.map((edge, i) => {
                 const n1 = nodes[edge[0]]
                 const n2 = nodes[edge[1]]
@@ -617,33 +625,80 @@ export function PlantMapKonva({
               {phase === "evaluated" && selectedEvalPath.map(b => (
                 <Rect key={`eval-${getGridKey(b)}`} x={b.x} y={b.y} width={blockSize} height={blockSize} fill="rgba(16, 185, 129, 0.6)" stroke="#10b981" strokeWidth={2} listening={false} />
               ))}
-              {/* Render Wizard Drawn Paths */}
+              {/* Render Wizard Drawn Paths (Vector Lines + Waypoints) */}
               {isWizard && wizardDrawnPaths.map((path, pathIdx) => {
                 const colors = [
-                  { fill: "rgba(16, 185, 129, 0.8)", stroke: "#10b981" }, // Green
-                  { fill: "rgba(245, 158, 11, 0.8)", stroke: "#f59e0b" }, // Orange
-                  { fill: "rgba(14, 165, 233, 0.8)", stroke: "#0ea5e9" }  // Blue
+                  { stroke: "#10b981", glow: "rgba(16, 185, 129, 0.4)" }, // Green
+                  { stroke: "#f59e0b", glow: "rgba(245, 158, 11, 0.4)" }, // Orange
+                  { stroke: "#0ea5e9", glow: "rgba(14, 165, 233, 0.4)" }  // Blue
                 ]
                 const c = colors[pathIdx] || colors[0]
+                if (path.length === 0) return null
                 return (
                   <Group key={`wizard-path-${pathIdx}`}>
+                    {path.length > 1 && (
+                      <Line
+                        points={path.flatMap(p => [p.x + (pathIdx * 2), p.y + (pathIdx * 2)])}
+                        stroke={c.stroke}
+                        strokeWidth={5}
+                        lineCap="round"
+                        lineJoin="round"
+                        listening={false}
+                      />
+                    )}
                     {path.map((b, idx) => (
-                      <Rect key={`wp-${pathIdx}-${idx}`} x={b.x + (pathIdx * 2)} y={b.y + (pathIdx * 2)} width={blockSize - (pathIdx * 4)} height={blockSize - (pathIdx * 4)} fill={c.fill} stroke={c.stroke} strokeWidth={2} listening={false} />
+                      <Circle
+                        key={`wp-${pathIdx}-${idx}`}
+                        x={b.x + (pathIdx * 2)}
+                        y={b.y + (pathIdx * 2)}
+                        r={4}
+                        fill={c.stroke}
+                        stroke="white"
+                        strokeWidth={1}
+                        listening={false}
+                      />
                     ))}
                   </Group>
                 )
               })}
-              {/* Render ACTIVE Wizard Drawn Path */}
-              {isWizard && phase === "path-draw" && drawnPath && drawnPath.map((b, idx) => {
+              {/* Render ACTIVE Wizard Drawn Path (Vector Line + Live Waypoints) */}
+              {isWizard && phase === "path-draw" && drawnPath && drawnPath.length > 0 && (() => {
                 const wizardRank = wizardSelectedExits.length;
                 const colors = [
-                  { fill: "rgba(16, 185, 129, 0.8)", stroke: "#10b981" }, // Green
-                  { fill: "rgba(245, 158, 11, 0.8)", stroke: "#f59e0b" }, // Orange
-                  { fill: "rgba(14, 165, 233, 0.8)", stroke: "#0ea5e9" }  // Blue
+                  { stroke: "#10b981", glow: "rgba(16, 185, 129, 0.5)" }, // Green
+                  { stroke: "#f59e0b", glow: "rgba(245, 158, 11, 0.5)" }, // Orange
+                  { stroke: "#0ea5e9", glow: "rgba(14, 165, 233, 0.5)" }  // Blue
                 ]
                 const c = colors[wizardRank] || colors[0]
-                return <Rect key={`active-wp-${idx}`} x={b.x + (wizardRank * 2)} y={b.y + (wizardRank * 2)} width={blockSize - (wizardRank * 4)} height={blockSize - (wizardRank * 4)} fill={c.fill} stroke={c.stroke} strokeWidth={2} listening={false} />
-              })}
+                return (
+                  <Group key="active-wizard-path">
+                    {drawnPath.length > 1 && (
+                      <Line
+                        points={drawnPath.flatMap(p => [p.x, p.y])}
+                        stroke={c.stroke}
+                        strokeWidth={6}
+                        lineCap="round"
+                        lineJoin="round"
+                        shadowColor={c.stroke}
+                        shadowBlur={8}
+                        listening={false}
+                      />
+                    )}
+                    {drawnPath.map((b, idx) => (
+                      <Circle
+                        key={`active-wp-${idx}`}
+                        x={b.x}
+                        y={b.y}
+                        r={idx === 0 || idx === drawnPath.length - 1 ? 7 : 4}
+                        fill={idx === 0 ? "#EF4444" : idx === drawnPath.length - 1 ? "#10B981" : c.stroke}
+                        stroke="white"
+                        strokeWidth={2}
+                        listening={false}
+                      />
+                    ))}
+                  </Group>
+                )
+              })()}
 
               {/* Render Graph Edges (Edit Mode Only) */}
               {phase === "edit" && edges.map(([a, b], i) => {
@@ -743,53 +798,63 @@ export function PlantMapKonva({
                 )
               })}
 
-              {/* Render Tutorial Animated Path */}
-              {phase === "tutorial" && showTutorialPath && tutorialPath && tutorialPath.length > 0 && (() => {
-                let tutDist = 0;
-                for (let i = 0; i < tutorialPath.length - 1; i++) {
-                  tutDist += ptDist(tutorialPath[i], tutorialPath[i + 1]);
-                }
-                const animDuration = Math.max(2, tutDist / 400)
-                const assemblyNode = nodes["ASSEMBLY"]
-                return (
-                  <Html key={tutorialKey} divProps={{ style: { pointerEvents: 'none' } }}>
-                    {/* Animated path SVG */}
-                    <svg width={1150} height={800} style={{ position: 'absolute', top: 0, left: 0 }}>
-                      <path
-                        d={tutorialPath.map((p, idx) => `${idx === 0 ? "M" : "L"} ${p.x} ${p.y}`).join(" ")}
-                        fill="none"
-                        stroke="#d946ef"
-                        strokeWidth="12"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        className="drop-shadow-[0_0_8px_rgba(217,70,239,0.8)]"
-                        style={{
-                          strokeDasharray: tutDist,
-                          strokeDashoffset: tutDist,
-                          animation: `draw-path ${animDuration}s linear forwards`
-                        }}
-                      />
-                    </svg>
-                    {/* Assembly Area radial pulse when reached */}
-                    {showAssemblyReached && assemblyNode && (
-                      <div
-                        style={{
-                          position: 'absolute',
-                          left: assemblyNode.x - 56,
-                          top: assemblyNode.y - 56,
-                          width: 112,
-                          height: 112,
-                          borderRadius: '50%',
-                          background: 'rgba(34,197,94,0.25)',
-                          boxShadow: '0 0 0 0 rgba(34,197,94,0.7)',
-                          animation: 'assembly-pulse 0.9s ease-out infinite',
-                          pointerEvents: 'none',
-                        }}
-                      />
-                    )}
-                  </Html>
-                )
-              })()}
+              {/* Render Tutorial Animated Path natively on Konva Canvas Layer */}
+              {phase === "tutorial" && showTutorialPath && tutorialPath && tutorialPath.length > 0 && (
+                <Group key={`tut-path-${tutorialKey}`}>
+                  {/* Outer Ambient Glow */}
+                  <Line
+                    points={tutorialPath.flatMap(p => [p.x, p.y])}
+                    stroke="rgba(217, 70, 239, 0.4)"
+                    strokeWidth={14}
+                    lineCap="round"
+                    lineJoin="round"
+                    shadowColor="#D946EF"
+                    shadowBlur={12}
+                    listening={false}
+                  />
+                  {/* Core Neon Pink Line */}
+                  <Line
+                    points={tutorialPath.flatMap(p => [p.x, p.y])}
+                    stroke="#D946EF"
+                    strokeWidth={6}
+                    lineCap="round"
+                    lineJoin="round"
+                    listening={false}
+                  />
+                  {/* Start Point Marker */}
+                  <Circle
+                    x={tutorialPath[0].x}
+                    y={tutorialPath[0].y}
+                    r={7}
+                    fill="#FDF4FF"
+                    stroke="#D946EF"
+                    strokeWidth={3}
+                    listening={false}
+                  />
+                  {/* End Point Marker (Assembly) */}
+                  <Circle
+                    x={tutorialPath[tutorialPath.length - 1].x}
+                    y={tutorialPath[tutorialPath.length - 1].y}
+                    r={8}
+                    fill="#FDF4FF"
+                    stroke="#10B981"
+                    strokeWidth={3}
+                    listening={false}
+                  />
+                  {/* Assembly Area Pulse Effect */}
+                  {showAssemblyReached && (
+                    <Circle
+                      x={713}
+                      y={568}
+                      r={24}
+                      fill="rgba(34,197,94,0.35)"
+                      stroke="#22C55E"
+                      strokeWidth={3}
+                      listening={false}
+                    />
+                  )}
+                </Group>
+              )}
 
               {/* Render Traced Neon Evacuation Path (Gameplay mode) */}
               {phase === "path-draw" && drawnPath && drawnPath.length > 0 && (

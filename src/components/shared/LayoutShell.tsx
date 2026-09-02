@@ -103,7 +103,7 @@ export function LayoutShell({ children, showHeader = true, noScroll = false }: L
         </header>
       )}
 
-      <main className={`mx-auto max-w-[1440px] w-full px-4 md:px-6 ${noScroll ? "flex-1 flex flex-col overflow-hidden py-4 sm:py-6 min-h-0" : "pt-6 pb-12"}`}>
+      <main className={`mx-auto max-w-[1500px] w-full ${noScroll ? (showHeader ? "flex-1 flex flex-col overflow-hidden px-3 py-2 min-h-0" : "h-screen flex flex-col overflow-hidden p-2 min-h-0") : "px-4 md:px-6 pt-6 pb-12"}`}>
         {children}
       </main>
     </div>

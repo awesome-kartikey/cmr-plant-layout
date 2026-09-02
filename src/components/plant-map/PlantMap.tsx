@@ -3,6 +3,7 @@ import { getGridKey, type GridBlock, findShortestGridPath } from "../../lib/grap
 import { N as initialN, EDGES as initialEdges, INITIAL_COLLISION_ZONES as initialCollisionZones, EXIT_ZONES as initialExitZones, PATH_BLOCKS as initialPathBlocks, buildGraph, projOnSeg, ptDist, EXITS, DEFAULT_GRAPH } from "../../lib/graph"
 import type { Point, Segment, GraphNodes, EdgeDef, NodeDef } from "../../lib/graph"
 import { FireEffect } from "./FireEffect"
+import { DynamicPlantMapSVG } from "./DynamicPlantMapSVG"
 
 interface PlantMapProps {
   phase: "tutorial" | "hazard-confirm" | "exit-select" | "path-draw" | "evaluated" | "edit"
@@ -537,8 +538,6 @@ export function PlantMap({
         }
       }}
     >
-      <img src="/map/cmr-emergency-plan-main.jpg" alt="Map" className="w-full h-full object-fill block pointer-events-none" />
-
       <svg
         ref={svgRef}
         viewBox="0 0 1000 600"
@@ -559,6 +558,9 @@ export function PlantMap({
             </feMerge>
           </filter>
         </defs>
+
+        {/* Dynamic Vector Map Base */}
+        <DynamicPlantMapSVG phase={phase} hazardNode={hazardNode} selectedExit={selectedExit} />
 
         
 

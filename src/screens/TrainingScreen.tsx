@@ -6,8 +6,9 @@ import { LayoutShell } from "../components/shared/LayoutShell"
 import { PlantMapKonva } from "../components/plant-map/PlantMapKonva"
 import type { Point } from "../lib/graph"
 import { N, ROOMS, IDEAL_ROUTES, dijkstra, ptDist, DEFAULT_GRAPH, getNearestExits, PATH_BLOCKS, EXIT_ZONES, findShortestGridPath } from "../lib/graph"
-import { Flame, DoorOpen, Route, Timer, Undo2, RotateCcw, Zap, ChevronRight, BookOpen, ClipboardCheck, Trophy, AlertTriangle, CheckCircle2, XCircle, Crosshair } from "lucide-react"
+import { Flame, DoorOpen, Route, Timer, Undo2, RotateCcw, Zap, ChevronRight, BookOpen, ClipboardCheck, Trophy, AlertTriangle, CheckCircle2, XCircle, Crosshair, Home, Globe } from "lucide-react"
 import { Button } from "../components/ui/button"
+import { toast } from "sonner"
 
 type Phase = "idle" | "tutorial" | "hazard-confirm" | "exit-select" | "path-draw" | "evaluated" | "edit"
 
@@ -50,7 +51,7 @@ function DrawTimer({ drawStartTime, phase, hasStartedDrawing }: { drawStartTime:
 
 export default function TrainingScreen() {
   const navigate = useNavigate()
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const { addAttempt, testData, resetTest } = useTest()
 
   const [phase, setPhase] = useState<Phase>("idle")
@@ -487,27 +488,42 @@ export default function TrainingScreen() {
     : "from-red-500 to-rose-600"
   const ScoreIcon = resultScore >= 70 ? CheckCircle2 : resultScore >= 40 ? AlertTriangle : XCircle
 
+  const toggleLanguage = () => {
+    const newLang = i18n.language === "en" ? "hi" : "en"
+    i18n.changeLanguage(newLang)
+  }
+
   return (
-    <LayoutShell showHeader={phase !== "edit"}>
-      <div className="flex flex-col gap-3 pb-12 select-none">
+    <LayoutShell showHeader={false} noScroll>
+      <div className="flex flex-col gap-1.5 flex-1 min-h-0 w-full select-none">
         
-        {/* ── Phase HUD Banner ── */}
-        <div className="flex flex-row flex-wrap items-center justify-between gap-3 bg-white border border-slate-100 rounded-2xl py-2.5 px-4 shadow-sm">
+        {/* ── Compact Phase HUD Banner (Navbar fully replaced) ── */}
+        <div className="flex flex-row items-center justify-between gap-2 bg-white border border-slate-200 rounded-xl py-1 px-2.5 shadow-sm shrink-0">
           
-          {/* Left: Step indicators + title */}
-          <div className="flex flex-wrap items-center gap-4">
+          {/* Left: Home + CMR pill + Step indicators + title */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => navigate("/")}
+              title="Home"
+              className="flex items-center gap-1.5 p-1 rounded-lg hover:bg-slate-100 text-slate-600 transition-colors cursor-pointer"
+            >
+              <Home className="h-4 w-4 text-slate-700" />
+              <img src="/cmr-logo.png" alt="CMR" className="h-5 w-auto object-contain hidden sm:block" />
+            </button>
             
+            <div className="w-px h-5 bg-slate-200" />
+
             {/* Title + subtitle */}
-            <div className={`${hudBg} border rounded-xl px-5 py-3 shadow-sm`}>
-              <h3 className={`font-black ${hudTitleColor} text-lg tracking-tight flex items-center gap-2`}>
-                {isWizard && <span className="text-white bg-indigo-600 rounded-lg px-2.5 py-1 text-xs font-black uppercase tracking-wider mr-1 shadow-sm">WIZARD {wizardIndex + 1}/{ROOMS.length}</span>}
+            <div className={`${hudBg} border rounded-lg px-2.5 py-0.5 shadow-xs`}>
+              <h3 className={`font-black ${hudTitleColor} text-xs sm:text-sm tracking-tight flex items-center gap-1.5`}>
+                {isWizard && <span className="text-white bg-indigo-600 rounded px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider shadow-xs">WIZARD {wizardIndex + 1}/{ROOMS.length}</span>}
                 {gameMode === "exam" && phase !== "evaluated" && phase !== "idle" && (
-                  <span className="text-white bg-rose-600 rounded-lg px-2.5 py-1 text-xs font-black uppercase tracking-wider mr-1 shadow-sm">EXAM</span>
+                  <span className="text-white bg-rose-600 rounded px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider shadow-xs">EXAM</span>
                 )}
                 {gameMode === "practice" && phase !== "evaluated" && phase !== "idle" && (
-                  <span className="text-white bg-sky-600 rounded-lg px-2.5 py-1 text-xs font-black uppercase tracking-wider mr-1 shadow-sm">PRACTICE</span>
+                  <span className="text-white bg-sky-600 rounded px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider shadow-xs">PRACTICE</span>
                 )}
-                {phase === "idle" && <span className="text-slate-600">Select a mode to begin</span>}
+                {phase === "idle" && <span className="text-slate-600">Select mode</span>}
                 {phase === "tutorial" && `Tutorial: ${roomName}`}
                 {phase === "hazard-confirm" && t("step1Title")}
                 {phase === "exit-select" && (isWizard ? `Select Rank ${wizardExitRank} Nearest Exit` : t("step2Title"))}
@@ -515,19 +531,19 @@ export default function TrainingScreen() {
                 {phase === "evaluated" && t("evaluatedTitle")}
                 {phase === "edit" && "Map Editor"}
               </h3>
-              <p className={`text-sm ${hudDescColor} font-bold mt-1`}>
-                {phase === "idle" && "Practice to prepare, or take the Exam to be scored."}
-                {phase === "tutorial" && "Observe the ideal evacuation route, then proceed."}
-                {phase === "hazard-confirm" && t("step1Desc")}
-                {phase === "exit-select" && (isWizard ? `Click on the gate that is the ${wizardExitRank} nearest to the hazard.` : t("step2Desc"))}
-                {phase === "path-draw" && t("step3Desc")}
-                {phase === "evaluated" && t("evaluatedDesc")}
-              </p>
             </div>
           </div>
 
-          {/* Right: Action buttons */}
-          <div className="flex items-center justify-end gap-2.5 shrink-0 flex-wrap">
+          {/* Right: Language switch + Action buttons */}
+          <div className="flex items-center justify-end gap-1.5 shrink-0">
+            {/* Language Switch button */}
+            <button
+              onClick={toggleLanguage}
+              className="flex items-center gap-1 px-2 py-1 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs font-bold transition-all cursor-pointer mr-1"
+            >
+              <Globe className="h-3.5 w-3.5 text-indigo-600" />
+              <span>{i18n.language === "en" ? "हिंदी" : "English"}</span>
+            </button>
 
             {/* Idle: Start buttons (DEV-only) */}
             {phase === "idle" && import.meta.env.DEV && (
@@ -536,7 +552,7 @@ export default function TrainingScreen() {
                   variant="default"
                   size="sm"
                   onClick={() => { setGameMode("practice"); pickNewHazard("practice"); }}
-                  className="h-9 px-5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-xs flex items-center gap-2 shadow-md shadow-indigo-600/25 transition-all hover:scale-105"
+                  className="h-8 px-4 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-lg text-xs flex items-center gap-1.5 shadow-sm transition-all hover:scale-105"
                 >
                   <BookOpen className="h-3.5 w-3.5" /> Practice
                 </Button>
@@ -544,7 +560,7 @@ export default function TrainingScreen() {
                   variant="default"
                   size="sm"
                   onClick={() => { setGameMode("exam"); pickNewHazard("exam"); }}
-                  className="h-9 px-5 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-xl text-xs flex items-center gap-2 shadow-md shadow-rose-600/25 transition-all hover:scale-105"
+                  className="h-8 px-4 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-lg text-xs flex items-center gap-1.5 shadow-sm transition-all hover:scale-105"
                 >
                   <ClipboardCheck className="h-3.5 w-3.5" /> Exam Mode
                 </Button>
@@ -556,19 +572,19 @@ export default function TrainingScreen() {
               <>
                 <Button
                   variant="outline"
-                  size="lg"
+                  size="sm"
                   onClick={startExamTransition}
-                  className="h-12 px-6 border-2 border-slate-300 hover:bg-slate-100 hover:text-slate-800 font-black rounded-xl text-base flex items-center gap-2 shadow-sm text-slate-600 transition-all hover:scale-105"
+                  className="h-9 px-4 border border-slate-300 hover:bg-slate-100 hover:text-slate-800 font-bold rounded-lg text-xs flex items-center gap-1.5 shadow-sm text-slate-600 transition-all hover:scale-105"
                 >
                   Skip Training
                 </Button>
                 <Button
                   variant="default"
-                  size="lg"
+                  size="sm"
                   onClick={() => setPhase("hazard-confirm")}
-                  className="h-12 px-8 bg-sky-600 hover:bg-sky-500 text-white font-black rounded-xl text-base flex items-center gap-2 shadow-lg shadow-sky-600/30 transition-all hover:scale-105 hover:-translate-y-0.5"
+                  className="h-9 px-5 bg-sky-600 hover:bg-sky-500 text-white font-black rounded-lg text-xs flex items-center gap-1.5 shadow-md shadow-sky-600/25 transition-all hover:scale-105"
                 >
-                  I understand <ChevronRight className="h-5 w-5" />
+                  I understand <ChevronRight className="h-4 w-4" />
                 </Button>
               </>
             )}
@@ -610,11 +626,11 @@ export default function TrainingScreen() {
             
             {/* Attempt counter */}
             {phase !== "idle" && phase !== "edit" && (
-              <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-100 rounded-xl px-2.5 py-1.5">
+              <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-100 rounded-lg px-2 py-1">
                 <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
                   {gameMode === "exam" ? t("attempts") : "Practice Attempt"}
                 </span>
-                <span className="text-sm font-black text-slate-700 font-mono leading-none flex items-baseline tracking-tighter">
+                <span className="text-xs font-black text-slate-700 font-mono leading-none flex items-baseline tracking-tighter">
                   {gameMode === "exam" ? attemptNum : practiceAttemptCount + 1}
                   {gameMode === "exam" && (
                     <>
@@ -632,12 +648,43 @@ export default function TrainingScreen() {
                 {!isWizard ? (
                   <button
                     onClick={startWizard}
-                    className="rounded-xl border border-indigo-300 bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 text-xs font-bold text-indigo-700 cursor-pointer transition-colors"
+                    className="rounded-lg border border-indigo-300 bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1 text-xs font-bold text-indigo-700 cursor-pointer transition-colors"
                   >
                     Start Wizard
                   </button>
                 ) : (
                   <>
+                    {phase === "path-draw" && (
+                      <>
+                        <button
+                          onClick={() => setDrawnPath(prev => prev.slice(0, -1))}
+                          disabled={drawnPath.length === 0}
+                          className="rounded-lg border border-amber-300 bg-amber-50 hover:bg-amber-100 disabled:opacity-50 px-2 py-1 text-xs font-bold text-amber-700 cursor-pointer transition-colors"
+                        >
+                          Undo Point
+                        </button>
+                        <button
+                          onClick={() => setDrawnPath([])}
+                          disabled={drawnPath.length === 0}
+                          className="rounded-lg border border-rose-300 bg-rose-50 hover:bg-rose-100 disabled:opacity-50 px-2 py-1 text-xs font-bold text-rose-700 cursor-pointer transition-colors"
+                        >
+                          Clear
+                        </button>
+                        <button
+                          onClick={() => {
+                            if (drawnPath.length >= 2) {
+                              handlePathComplete(drawnPath)
+                            } else {
+                              toast.error("Please click at least 2 points along the corridor to trace the route!")
+                            }
+                          }}
+                          disabled={drawnPath.length < 2}
+                          className="rounded-lg border border-emerald-400 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 px-2.5 py-1 text-xs font-bold text-white cursor-pointer transition-colors shadow-xs"
+                        >
+                          Confirm Route ({wizardExitRank}/3)
+                        </button>
+                      </>
+                    )}
                     <button
                       onClick={() => {
                         let nextIndex = wizardIndex + 1
@@ -648,21 +695,21 @@ export default function TrainingScreen() {
                         setWizardExitRank(1)
                         loadWizardHazard(nextIndex)
                       }}
-                      className="rounded-xl border border-gray-300 bg-gray-50 hover:bg-gray-100 px-3 py-1.5 text-xs font-bold text-gray-700 cursor-pointer transition-colors"
+                      className="rounded-lg border border-gray-300 bg-gray-50 hover:bg-gray-100 px-2 py-1 text-xs font-bold text-gray-700 cursor-pointer transition-colors"
                     >
-                      Skip to Next Room
+                      Skip Next
                     </button>
                     <button
                       onClick={exportWizardData}
-                      className="rounded-xl border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 px-3 py-1.5 text-xs font-bold text-emerald-700 cursor-pointer transition-colors"
+                      className="rounded-lg border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1 text-xs font-bold text-emerald-700 cursor-pointer transition-colors"
                     >
-                      Export Wizard
+                      Export
                     </button>
                   </>
                 )}
                 <button
                   onClick={() => setPhase(phase === "edit" ? "hazard-confirm" : "edit")}
-                  className="rounded-xl border border-slate-300 hover:bg-slate-100 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 cursor-pointer transition-colors"
+                  className="rounded-lg border border-slate-300 hover:bg-slate-100 bg-white px-2.5 py-1 text-xs font-semibold text-gray-700 cursor-pointer transition-colors"
                 >
                   {phase === "edit" ? t("exitEdit") : t("editMap")}
                 </button>
@@ -672,7 +719,7 @@ export default function TrainingScreen() {
         </div>
 
         {/* ── Map Container ── */}
-        <div className="relative rounded-2xl overflow-hidden shadow-md border border-slate-200">
+        <div className="relative flex-1 min-h-0 w-full flex items-center justify-center rounded-xl overflow-hidden shadow-sm border border-slate-200 bg-white p-1">
           <PlantMapKonva
             phase={phase}
             hazardNode={hazardNode}
