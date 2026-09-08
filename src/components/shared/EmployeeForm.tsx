@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useTranslation } from "react-i18next"
 import { useTest } from "../../contexts/TestContext"
 import { Button } from "../ui/button"
@@ -19,6 +19,12 @@ export function EmployeeForm({ onSubmit }: EmployeeFormProps) {
   const [code, setCode] = useState(employeeData.employeeCode)
   const [photo, setPhoto] = useState<string | null>(employeeData.photo)
   const [error, setError] = useState("")
+
+  useEffect(() => {
+    setName(employeeData.name)
+    setCode(employeeData.employeeCode)
+    setPhoto(employeeData.photo)
+  }, [employeeData.name, employeeData.employeeCode, employeeData.photo])
 
   const handleSubmit = () => {
     if (!name.trim()) { setError(t("employeeNameInvalid")); return }

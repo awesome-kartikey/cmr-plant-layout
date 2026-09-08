@@ -186,5 +186,6 @@
   "weaknessNoMajor": "No Major Weaknesses",
   "weaknessNoMajorDesc": "Outstanding performance across all metrics.",
   "sortNewest": "Newest First",
-  "sortOldest": "Oldest First"
+  "sortOldest": "Oldest First",
+  "nextCandidate": "Next Candidate"
 }

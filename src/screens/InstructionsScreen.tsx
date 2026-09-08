@@ -9,7 +9,7 @@ import { Video, Trophy } from "lucide-react"
 export default function InstructionsScreen() {
   const navigate = useNavigate()
   const { t } = useTranslation()
-  const { testData } = useTest()
+  const { testData, resetAll } = useTest()
 
   const steps = [
     { title: t("identifyHazardStep"), key: "instruction1", detail: "instruction2" },
@@ -104,7 +104,10 @@ export default function InstructionsScreen() {
           <Button
             size="lg"
             className="w-full bg-indigo-600 hover:bg-indigo-500 text-white shadow-md shadow-indigo-600/20 h-16 sm:h-20 text-2xl sm:text-3xl font-black rounded-xl cursor-pointer transition-all active:scale-[0.99] py-6"
-            onClick={() => navigate("/form")}
+            onClick={() => {
+              resetAll()
+              navigate("/form")
+            }}
           >
             {t("startTest")}
           </Button>
