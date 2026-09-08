@@ -1,3 +1,4 @@
+import { useEffect } from "react"
 import { useNavigate } from "react-router-dom"
 import { useTranslation } from "react-i18next"
 import { LayoutShell } from "../components/shared/LayoutShell"
@@ -8,7 +9,13 @@ export default function EmployeeDetailsScreen() {
   const navigate = useNavigate()
   const { t } = useTranslation()
 
-  const { resetTest } = useTest()
+  const { testData, resetTest, resetAll } = useTest()
+
+  useEffect(() => {
+    if (testData.attempts.length > 0) {
+      resetAll()
+    }
+  }, [testData.attempts.length, resetAll])
 
   const handleSubmit = () => {
     resetTest()
