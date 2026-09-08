@@ -8,14 +8,11 @@ export default function EmployeeDetailsScreen() {
   const navigate = useNavigate()
   const { t } = useTranslation()
 
-  const { testData } = useTest()
+  const { resetTest } = useTest()
 
   const handleSubmit = () => {
-    if (testData.attempts.length > 0) {
-      navigate("/result")
-    } else {
-      navigate("/training")
-    }
+    resetTest()
+    navigate("/training")
   }
 
   return (

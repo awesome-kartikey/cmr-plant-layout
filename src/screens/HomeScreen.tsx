@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next"
 import { collection, getDocs, query, orderBy, limit } from "firebase/firestore"
 import { db } from "../lib/firebase"
 import { useAuth } from "../contexts/AuthContext"
+import { useTest } from "../contexts/TestContext"
 import { LayoutShell } from "../components/shared/LayoutShell"
 import { Button } from "../components/ui/button"
 import { Input } from "../components/ui/input"
@@ -40,6 +41,7 @@ export default function HomeScreen() {
   const navigate = useNavigate()
   const { t } = useTranslation()
   const { user } = useAuth()
+  const { resetAll } = useTest()
   
   const [results, setResults] = useState<ResultItem[]>([])
   const [filtered, setFiltered] = useState<ResultItem[]>([])
@@ -250,7 +252,10 @@ export default function HomeScreen() {
             <Button 
               size="lg" 
               className="bg-indigo-600 hover:bg-indigo-500 text-white shadow-md shadow-indigo-600/20 px-8 py-6 font-semibold rounded-xl shrink-0 group cursor-pointer"
-              onClick={() => navigate("/instructions")}
+              onClick={() => {
+                resetAll()
+                navigate("/instructions")
+              }}
             >
               {t("startTest")}
               <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />

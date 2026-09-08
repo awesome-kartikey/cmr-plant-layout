@@ -11,7 +11,7 @@ import { Card, CardContent } from "../components/ui/card"
 import { Badge } from "../components/ui/badge"
 import { toast } from "sonner"
 import { generateCertificate, shareCertificate } from "../lib/certificate"
-import { Trophy, FileDown, CheckCircle, RotateCcw, Home, Calendar, Flame, Target, Zap, AlertTriangle, XCircle, Loader2, MoveRight } from "lucide-react"
+import { Trophy, FileDown, CheckCircle, RotateCcw, Home, Calendar, Flame, Target, Zap, AlertTriangle, XCircle, Loader2, MoveRight, UserPlus } from "lucide-react"
 import { N } from "../lib/graph"
 
 function getGradeLabel(score: number, maxScore: number, t: any) {
@@ -38,8 +38,14 @@ type SaveStatus = "idle" | "saving" | "saved" | "error"
 export default function ResultScreen() {
   const navigate = useNavigate()
   const { t } = useTranslation()
-  const { employeeData, testData, resetTest } = useTest()
+  const { employeeData, testData, resetTest, resetAll } = useTest()
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle")
+
+  useEffect(() => {
+    if (testData.attempts.length === 0) {
+      navigate("/home", { replace: true })
+    }
+  }, [testData.attempts.length, navigate])
 
   const initials = (employeeData.name || "NA").substring(0, 2).toUpperCase()
   const maxScore = testData.attempts.length > 0 ? testData.attempts.length * 100 : 300
@@ -175,7 +181,13 @@ export default function ResultScreen() {
     navigate("/training")
   }
 
+  const handleNextCandidate = () => {
+    resetAll()
+    navigate("/form")
+  }
+
   const handleHome = () => {
+    resetAll()
     navigate("/home")
   }
 
@@ -381,31 +393,42 @@ export default function ResultScreen() {
               <SaveStatusChip />
             </div>
             {/* Action buttons */}
-            <div className="flex gap-3">
+            <div className="space-y-2">
               <Button
-                className="flex-1 bg-slate-800 hover:bg-slate-700 text-white cursor-pointer py-5 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg transition-transform hover:-translate-y-0.5"
-                onClick={handleDownloadCertificate}
+                className="w-full bg-indigo-600 hover:bg-indigo-500 text-white cursor-pointer py-5 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/20 transition-transform hover:-translate-y-0.5 text-base"
+                onClick={handleNextCandidate}
               >
-                <FileDown className="h-5 w-5" />
-                Certificate
+                <UserPlus className="h-5 w-5" />
+                {t("nextCandidate")}
               </Button>
 
-              <Button
-                className="flex-1 border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-900 cursor-pointer py-5 rounded-xl font-bold flex items-center justify-center gap-1.5 transition-transform hover:-translate-y-0.5"
-                variant="outline"
-                onClick={handleHome}
-              >
-                <Home className="h-4 w-4" />
-                {t("home")}
-              </Button>
+              <div className="flex gap-2 sm:gap-3">
+                <Button
+                  className="flex-1 bg-slate-800 hover:bg-slate-700 text-white cursor-pointer py-4 rounded-xl font-bold flex items-center justify-center gap-2 shadow-md transition-transform hover:-translate-y-0.5 text-xs sm:text-sm"
+                  onClick={handleDownloadCertificate}
+                >
+                  <FileDown className="h-4 w-4" />
+                  Certificate
+                </Button>
 
-              <Button
-                className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white cursor-pointer py-5 rounded-xl font-bold flex items-center justify-center gap-1.5 shadow-lg shadow-indigo-600/20 transition-transform hover:-translate-y-0.5"
-                onClick={handlePlayAgain}
-              >
-                <RotateCcw className="h-4 w-4" />
-                Retake Test
-              </Button>
+                <Button
+                  className="flex-1 border-slate-200 text-slate-700 hover:bg-slate-50 hover:text-slate-900 cursor-pointer py-4 rounded-xl font-bold flex items-center justify-center gap-1.5 transition-transform hover:-translate-y-0.5 text-xs sm:text-sm"
+                  variant="outline"
+                  onClick={handlePlayAgain}
+                >
+                  <RotateCcw className="h-4 w-4" />
+                  Retake Test
+                </Button>
+
+                <Button
+                  className="flex-1 border-slate-200 text-slate-700 hover:bg-slate-50 hover:text-slate-900 cursor-pointer py-4 rounded-xl font-bold flex items-center justify-center gap-1.5 transition-transform hover:-translate-y-0.5 text-xs sm:text-sm"
+                  variant="outline"
+                  onClick={handleHome}
+                >
+                  <Home className="h-4 w-4" />
+                  {t("home")}
+                </Button>
+              </div>
             </div>
           </div>
         </div>

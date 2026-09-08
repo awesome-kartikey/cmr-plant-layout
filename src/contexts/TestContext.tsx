@@ -7,6 +7,8 @@ interface TestContextType {
   testData: TestData
   addAttempt: (attempt: Attempt) => void
   resetTest: () => void
+  resetEmployeeData: () => void
+  resetAll: () => void
 }
 
 const TestContext = createContext<TestContextType | null>(null)
@@ -45,9 +47,32 @@ export function TestProvider({ children }: { children: ReactNode }) {
     setTestData(initialTestData)
   }
 
+  const resetEmployeeData = () => {
+    setEmployeeData({
+      ...initialEmployeeData,
+      testDate: new Date(),
+    })
+  }
+
+  const resetAll = () => {
+    setEmployeeData({
+      ...initialEmployeeData,
+      testDate: new Date(),
+    })
+    setTestData(initialTestData)
+  }
+
   return (
     <TestContext.Provider
-      value={{ employeeData, updateEmployeeData, testData, addAttempt, resetTest }}
+      value={{
+        employeeData,
+        updateEmployeeData,
+        testData,
+        addAttempt,
+        resetTest,
+        resetEmployeeData,
+        resetAll,
+      }}
     >
       {children}
     </TestContext.Provider>

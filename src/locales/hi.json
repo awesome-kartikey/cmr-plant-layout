@@ -186,7 +186,8 @@
   "weaknessNoMajor": "कोई बड़ी कमजोरी नहीं",
   "weaknessNoMajorDesc": "सभी मैट्रिक्स में उत्कृष्ट प्रदर्शन।",
   "sortNewest": "नवीनतम पहले",
-  "sortOldest": "पुराने पहले",
+  "sortOldest": "पुराना पहले",
+  "nextCandidate": "अगला उम्मीदवार",
   "map": {
     "coldRefiningArea": "कोल्ड\nरिफाइनिंग\nएरिया",
     "coldRefiningAreaSingle": "कोल्ड रिफाइनिंग एरिया",

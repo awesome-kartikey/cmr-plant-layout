@@ -187,6 +187,7 @@
   "weaknessNoMajorDesc": "Outstanding performance across all metrics.",
   "sortNewest": "Newest First",
   "sortOldest": "Oldest First",
+  "nextCandidate": "Next Candidate",
   "map": {
     "coldRefiningArea": "COLD\nREFINING\nAREA",
     "coldRefiningAreaSingle": "COLD REFINING AREA",
